@@ -1,1 +1,13 @@
 # Pneumonia_Subtypes
+
+# Scripts
+
+1. helper.R has all the functions to perform stats and create boxplots/dotplots, some other custom stats/boxplots are in the main script
+2. Clustering.RMD performs consensus clustering for both human and mouse
+3. Figures.RMD creates all the publication figures
+
+# Data
+1. All the data required will be generated and stored under the data folder
+
+
+
