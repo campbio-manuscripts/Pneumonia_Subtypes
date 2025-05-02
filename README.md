@@ -16,8 +16,16 @@
 1. helper_functions.R has all the functions to perform stats and create boxplots/dotplots, some other custom stats/boxplots are in the main script
 2. Generate_supplemental_stats_table.R combines all excel stats file into one large excel file
 
+
+## Setting up environment
+
+Use the renv.lock file to restore the R environment using renv::restore()
+R version - 4.2.1
+
+
 # Data
-1. All the data required will be generated and stored under the data folder
+
+All the data required will be generated and stored under the data folder
 
 The scripts assume you have a directory structure like this 
 
