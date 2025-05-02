@@ -1,6 +1,6 @@
 # Pneumonia Sub-phenotypes
 
-![](figures/Graphical_abstract_Fig 1A.png)
+![](figures/Graphical_abstract_Fig1A.png)
 
 
 
