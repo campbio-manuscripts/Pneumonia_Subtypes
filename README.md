@@ -1,13 +1,28 @@
-# Pneumonia_Subtypes
+# Pneumonia Sub-phenotypes
+
+![](figures/Graphical_abstract_Fig 1A.png)
+
+
+
+![](figures/Mouse_subphenotypes_paper1.png)
 
 # Scripts
 
+## Major scripts
+1. Clustering.RMD performs consensus clustering for both human and mouse
+2. FiguresV10.RMD creates all the publication figures
+
+## Processing scripts
 1. helper_functions.R has all the functions to perform stats and create boxplots/dotplots, some other custom stats/boxplots are in the main script
-2. Clustering.RMD performs consensus clustering for both human and mouse
-3. FiguresV10.RMD creates all the publication figures
+2. Generate_supplemental_stats_table.R combines all excel stats file into one large excel file
 
 # Data
 1. All the data required will be generated and stored under the data folder
+
+The scripts assume you have a directory structure like this 
+
+![](figures/Directory_struc.png)
+    
 
 
 

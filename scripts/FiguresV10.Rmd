@@ -1,0 +1,2108 @@
+---
+title: "Figure V10"
+author: "Amulya Shastry"
+date: "2025-04-26"
+output: html_document
+---
+
+# Standardize folder names 
+# renv pacakge - create a yaml file
+# See what else can be moved to helper script
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(ConsensusClusterPlus)
+library(tidyverse)
+library(dplyr)
+library(readxl)
+library(tidyverse)
+library(factoextra)
+library(umap)
+library(iheatmapr)
+library(qgraph)
+library(corpcor)
+library(glasso)
+library(BDgraph)
+library(umap)
+library(dendextend)
+library(cluster)
+library(ggplot2)
+library(bayesbio)
+library(ggpubr)
+library(rstatix)
+library(mclust)
+library(psych)
+library(scales)
+library(ggpubr)
+library(janitor)
+library(fpc)
+library(ppcor)
+library(circlize)
+library(ComplexHeatmap)
+library(gtsummary)
+library(xlsx)
+source("scripts/helper_functions.R")
+library(rstatix)
+library(tidytext)
+library(DescTools)
+library(markdown)
+```
+
+# Loading all data 
+
+```{r}
+#cleaned, filtered, averaged HE scores (not scaled)
+HE_scores<-read.csv("data/cleaned_data_v6.3.csv") %>% column_to_rownames("X") 
+
+# Remove underscores from filenames
+HE_scores<-clean_column_names(HE_scores,"human")
+
+
+# Scaled data
+HE_scaled_data<-read.csv("data/clean_data/Histopathology_cleaned_filtered_scaled_data.csv") %>% column_to_rownames("X")
+
+HE_scaled_data<-clean_column_names(HE_scaled_data,"human")
+
+
+# cleaned mihc data with mean scores
+mihc_scaled<-read.csv("data/mihc_final_with_mean_scaled_11092023.csv")
+
+mihc_scores<-read.csv("data/mihc_final_with_mean_all_samples_11092023.csv")
+
+mihc_scores %>%
+  dplyr::select(slide_id,
+                "CD19" = Opal.480.Positive.Cells..CD19.,
+                "CD4" = Opal.520.Positive.Cells..CD4.,
+                "CD8" = Opal.620.Positive.Cells..CD8.,
+                "MPO" = Opal.570.Area..μm...Myeloperoxidase,
+                "CD68" = Opal.690.Area..μm...CD68) -> mihc_scores2
+
+# All labels 
+labels<-read.csv("data/all_labels_cleaned") %>% mutate(sample_type = ifelse(sample_type == "SARS_CoV2_pneumonia","SCV2 Pneumonia",sample_type)) %>%
+mutate(sample_type = ifelse(sample_type == "control","Control",sample_type))  
+
+
+rename_clusters<-data.frame(old_labs = c(6,2,7,3,5,4,1),new_labs = c("I","II","III","IV","V","VI","VII"))
+
+labels %>%
+  left_join(rename_clusters,by =c("clust_labs" = "old_labs")) -> labels
+
+
+
+# Info about health condition groups for analysis - Brad
+disease_list<-read_excel("data/Selected_disease_categories_for_investigation.xlsx", sheet = "approved health conditions")
+
+
+# Comorbidities according to exisiting metadata
+metadata_clean_health<-readxl::read_excel("data/Metadata_new_03172022.xlsx", sheet = "approved health conditions")
+
+
+# All other metadata -> Age, sex, smoking etc
+metadata_clean_part3<- readRDS("/data/cleaned_metadata_02192024.RDS") %>%
+  mutate_all(funs(str_replace(., "Not_recorded", "not_recorded"))) %>%
+  mutate(Race = ifelse(Race == "","not_recorded",Race))
+
+
+# Load clustering data
+
+CC_euc_scaled<-readRDS("figures/Clustering/Euclidean_scaled/CC_euc_scaled.RDS")
+icl<- readRDS("figures/Clustering/Euclidean_scaled/ICL/icl.RDS")
+```
+
+
+
+# Figure 1A: Comparing control to all pneumonias across features
+# New type is the column name which indicates sample type (we already have sample type but we changes SARS-Cov2 to pneumonia as well in the new type and hence the new column)
+
+```{r}
+# Preprocessing to add binarized bacteria scores. 
+HE_scores %>%
+  rownames_to_column("CaseID")%>%
+  separate(CaseID, into = c("CaseID","c"), sep = " ") %>%
+  dplyr::select(-c) %>%
+  mutate(Bacteria_present = ifelse(Bacteria == 0,"No","Yes")) %>% 
+  inner_join(labels, by = c("CaseID")) -> Processed_HE  
+
+Processed_HE %>%
+  mutate(new_type = ifelse(sample_type == "Control","Control","Pneumonia")) -> HE_scores_with_clust_labels_and_bac
+
+write.csv(HE_scores_with_clust_labels_and_bac,"data/HE_raw_mean_scores_with_all_labels.csv")
+# Run KW and Dunn test
+HE_scores_with_clust_labels_and_bac %>%
+  dplyr::select(-Gender,-Age,-expired_age,-Race,-smoking_history,-smoking_status,-Alcohol_history, -Alcohol_status,-old_id,-Primary.diagnosis,-X,-Bacteria_present,-clust_labs,-sample_type, -new_labs) ->t1
+  
+dunn_for_figure<-get_stats(t1,"new_type",type = "categorical", folder_name = "figures/Control_vs_all_pneumonia/statistical_test_results/") %>% rstatix::add_y_position(step.increase = 0.1)
+
+# Create outliers
+t1 %>%
+   gather("feature","score",-new_type,-CaseID) %>% 
+   group_by(feature, new_type) %>%
+   mutate(outlier = ifelse(score > (quantile(score, .75) + 1.50*IQR(score)) & new_type == "Pneumonia","#b35806",NA)) %>%
+   mutate(outlier = ifelse(score > (quantile(score, .75) + 1.50*IQR(score)) & new_type == "Control","#542788",outlier)) %>%
+   mutate(outlier = ifelse(score < (quantile(score, .25) - 1.50*IQR(score)) & new_type == "Pneumonia","#b35806",outlier)) %>%
+   mutate(outlier = ifelse(score < (quantile(score, .25) - 1.50*IQR(score)) & new_type == "Control","#542788",outlier)) %>%
+   mutate(feature = str_replace_all(feature," ","\n")) %>%
+   transform(new_type = as.factor(new_type))-> data_for_plot
+ 
+
+make_boxplots_dotplots(data_for_plot,plot_type = "bv",varb_name = "new_type", 
+                       stats = dunn_for_figure,bx_color = c("#542788","#b35806"),
+                       folder_name = "figures/Control_vs_all_pneumonia/",
+                       width = 16,height = 8,dtype = "HE", xlab = "Sample type",nrow = 2)
+
+```
+
+
+```{r}
+HE_scores_with_clust_labels_and_bac %>%
+  dplyr::select(-Gender,-Age,-expired_age,-Race,-smoking_history,-smoking_status,-Alcohol_history, -Alcohol_status,-old_id,-Primary.diagnosis,-X,-Bacteria_present,-clust_labs,-new_labs, -sample_type) %>%
+  gather("feature","score",-new_type,-CaseID) %>%
+  group_by(new_type,feature) %>%
+  summarise(mean = mean(score), sd = sd(score)) %>% 
+  write.csv("figures/Supplemental_data/mean_feature_score_grouped_by_sample_type.csv")
+```
+
+# Features detected across samples
+
+```{r}
+#"#5D737E","#DBB4AD"
+feature_presence_data<-HE_scores_with_clust_labels_and_bac %>%
+  filter(sample_type !="Control") %>%
+  dplyr::select(-Gender,-Age,-expired_age,-Race,-smoking_history,-smoking_status,-Alcohol_history, -Alcohol_status,-old_id,-Primary.diagnosis,-X,-Bacteria_present,-clust_labs,-new_labs, -new_type) %>%
+  gather("feature","score",-sample_type,-CaseID) %>%
+  mutate(Present = ifelse(score >=0.5,1, 0)) %>%
+  group_by(feature,Present) %>% 
+  mutate(sum = sum(Present)) %>%
+  ungroup() %>%
+  group_by(feature) %>%
+  mutate(total = n()) %>%
+  transform(Present = as.factor(Present)) %>%
+  mutate(fraction = sum/total*100) %>%
+  mutate(feature = str_replace(feature,"\n"," ")) %>%
+  transform(feature = as.factor(feature)) %>%
+  arrange(desc(fraction)) 
+
+ feature_presence_data$feature<-with(feature_presence_data,reorder(feature,desc(fraction)))
+
+ feature_presence<-feature_presence_data %>%
+  mutate(ifelse(Present == "1","Yes","No")) %>%
+  ggplot(aes(fct_reorder(feature,desc(sum)),fill = Present)) +
+  geom_bar(position = "fill") +
+  scale_fill_manual(values = c("white","#2B193D")) +
+   scale_y_continuous(labels = scales::percent) +
+  xlab("Histopathology Feature") +
+  ylab("Percentage of pneumonia samples\nwith the feature") +
+  labs(fill = "Is the feature present?")+
+  ggstyle()+
+  theme(axis.text.x = element_text(angle = 45, hjust = 0.99, vjust = 1, size = 40,face = "bold")) +
+  theme(axis.text.y = element_text(size = 40,face = "bold"), axis.title.x.bottom = element_text(size = 40,face = "bold"), axis.title.y.left = element_text(size = 40,face = "bold"), legend.position = "none", axis.ticks = element_line(color = "black"))
+
+ggsave(feature_presence,filename ="figures/Control_vs_all_pneumonia/feaures_present_across_pneumonic_lungs.pdf",width = 18,height =16,dpi = 300) 
+
+ggsave(feature_presence,filename ="figures/Control_vs_all_pneumonia/feaures_present_across_pneumonic_lungs.tiff",width = 18,height =16,dpi = 300) 
+ 
+```
+
+
+
+
+# Figure 2A
+# Pneumo vs SARS
+
+```{r}
+label_order<-c("Abscess","Arterial\nthrombi","Bacteria","Alveolar\nHemorrhage","Edema","Necrosis","PMN","Lympho","AT2\nhyperplasia","Hyaline\nmembranes","Fibrosis")
+
+Processed_HE %>%
+  filter(sample_type != "Control") %>%
+  mutate(scv2_status = ifelse(sample_type == "SCV2 Pneumonia","Yes","No")) %>% 
+  dplyr::select(-Gender,-Age,-expired_age,-Race,-smoking_history,-smoking_status,-Alcohol_history, -Alcohol_status,-old_id,-Primary.diagnosis,-X,-Bacteria_present,-clust_labs,-sample_type, -new_labs) ->s1
+
+# stats
+dunn_for_figure_s<-get_stats(s1,"scv2_status",folder_name = "figures/Pneumo_vs_SARS/statistical_test_results/",type = "categorical") %>% rstatix::add_y_position(step.increase = 0.1) 
+
+# Filter only the ones that we are showing on the figure and convert the feature to factor to ensure the plot is in the right order
+dunn_for_figure_s %>%
+  filter(feature %in% label_order) %>%
+   transform(feature = factor(feature, levels = c("Abscess","Arterial\nthrombi","Bacteria","Alveolar\nHemorrhage","Edema","Necrosis","PMN","Lympho","AT2\nhyperplasia","Hyaline\nmembranes","Fibrosis")))->dunn_for_figure_s 
+
+
+# Create data points outliers. We don't show other dots, only outliers
+s1 %>%
+   dplyr::select(CaseID, all_of(label_order),scv2_status) %>%
+   gather("feature","score",-scv2_status,-CaseID) %>% 
+   group_by(feature, scv2_status) %>%
+   mutate(outlier = ifelse(score > (quantile(score, .75) + 1.50*IQR(score)) & scv2_status == "No","#b35806",NA)) %>%
+   mutate(outlier = ifelse(score > (quantile(score, .75) + 1.50*IQR(score)) & scv2_status == "Yes","#5ab4ac",outlier)) %>%
+   mutate(outlier = ifelse(score < (quantile(score, .25) - 1.50*IQR(score)) & scv2_status == "No","#b35806",outlier)) %>%
+   mutate(outlier = ifelse(score < (quantile(score, .25) - 1.50*IQR(score)) & scv2_status == "Yes","#5ab4ac",outlier)) %>%
+   mutate(feature = str_replace_all(feature," ","\n")) %>%
+   filter(feature %in% label_order) %>% # Keep only the ones that we will display
+   transform(scv2_status = as.factor(scv2_status)) %>%
+   transform(feature = factor(feature, levels = c("Abscess","Arterial\nthrombi","Bacteria","Alveolar\nHemorrhage","Edema","Necrosis","PMN","Lympho","AT2\nhyperplasia","Hyaline\nmembranes","Fibrosis")))  -> data_for_plot_s
+
+
+make_boxplots_dotplots(data_for_plot_s,plot_type = "bv",
+                       varb_name = "scv2_status", stats = dunn_for_figure_s,
+                       folder_name = "figures/Pneumo_vs_SARS/",
+                       bx_color = c("#b35806","#5ab4ac"), width = 16,height = 4,xlab = "SARS-CoV-2 Positive", dtype = "HE",nrow = 1)
+```
+
+# Supplemental figures 2A
+
+```{r}
+dunn_for_figure_s %>%
+  filter(!feature %in% label_order) ->dunn_for_figure_ss
+
+# Create data points outliers. We don't show other dots, only outliers
+s1 %>%
+   gather("feature","score",-scv2_status,-CaseID) %>% 
+   group_by(feature, scv2_status) %>%
+   mutate(outlier = ifelse(score > (quantile(score, .75) + 1.50*IQR(score)) & scv2_status == "No","#b35806",NA)) %>%
+   mutate(outlier = ifelse(score > (quantile(score, .75) + 1.50*IQR(score)) & scv2_status == "Yes","#5ab4ac",outlier)) %>%
+   mutate(outlier = ifelse(score < (quantile(score, .25) - 1.50*IQR(score)) & scv2_status == "No","#b35806",outlier)) %>%
+   mutate(outlier = ifelse(score < (quantile(score, .25) - 1.50*IQR(score)) & scv2_status == "Yes","#5ab4ac",outlier)) %>%
+   mutate(feature = str_replace_all(feature," ","\n")) %>%
+   filter(!feature %in% label_order) %>% # Keep only the ones that we will display
+   transform(scv2_status = as.factor(scv2_status))  -> data_for_plot_ss
+
+make_boxplots_dotplots(data_for_plot_ss,plot_type = "bv",
+                       varb_name = "scv2_status", stats = dunn_for_figure_ss,
+                       folder_name = "figures/Supplemental_figures/Figure2A_",
+                       bx_color = c("#b35806","#5ab4ac"), width = 13,height = 4,xlab = "SARS-CoV-2 Positive", dtype = "HE",nrow = 1)
+```
+
+
+
+
+
+
+# Correlation across all HE features only for pneumonia samples (no scv2 & control)
+# I can directly use cor(df) but doing a loop to make insig values 0. 
+
+```{r}
+library(ggcorrplot)
+colnames(Processed_HE)
+
+# Selecting only pneumonia samples (not control and including all the features)
+
+  Processed_HE %>%
+    dplyr::select(-Gender,-Age,-expired_age,-Race,-smoking_history,-smoking_status,-Alcohol_history, -Alcohol_status,-old_id,-Primary.diagnosis,-X,-Bacteria_present,-clust_labs, -new_labs) %>%
+    filter(sample_type !=  "Control") %>%
+    column_to_rownames("CaseID") %>%
+    dplyr::select(-sample_type) ->c1
+  
+# Updated the column names because of sizing issues - make it all one line names
+colnames(c1)<-str_replace(colnames(c1),"\n"," ")
+
+# Create an empty df with name cols and rows as our original df    
+cor_df<-data.frame(matrix(nrow = ncol(c1), ncol = ncol(c1)))
+colnames(cor_df)<-colnames(c1)
+rownames(cor_df)<-colnames(c1)
+
+# Create another dataframe to store the pvalues
+pval<-data.frame(matrix(nrow = ncol(c1), ncol = ncol(c1)))
+
+# loop over rows and columns to calculate correlation, pvalue and create a df with 0 values for insignificant correlation and actual correlation values for correlation
+a = 1
+for (k in 1:18) {
+  b = 1
+  for (j in 1:18) {
+    cor_df[a,b]<-corr.test(c1[,k],c1[,j], method ="spearman", adjust = "BH")$r
+    pval[a,b]<-corr.test(c1[,k],c1[,j], method ="spearman", adjust = "BH")$p.adj # make insig ones 0
+    if(pval[a,b]< 0.05){
+      cor_df[a,b]<- cor_df[a,b]
+    }
+    else if(pval[a,b]> 0.05){
+      cor_df[a,b]<- 0
+    }
+    b = b+1
+  }
+  a = a+1
+}
+
+# Plot it and store it as pdf and tiff
+library(RColorBrewer)
+library(corrplot)
+cor_df %>%
+    ggcorrplot(type = "lower", lab = TRUE,tl.cex = 25,tl.srt = 25,lab_size = 10,hc.order = TRUE) + ggstyle() +
+   theme(legend.text = element_text(size= 25), axis.text.x = element_text(angle = 45,size = 40, face = "bold"),
+         axis.text.y = element_text(size = 40, face = "bold"),
+         legend.key.size = unit(1, 'cm'), axis.ticks = element_line(colour = "black"))-> p2
+fname<-paste0("figures/Correlation/pneumonia_only_updated_HE_feature_correlation.tiff")
+ggsave(p2,filename = fname, width = 30, height =30,units="in", dpi=300)
+
+fname2<-paste0("figures/Correlation/pneumonia_only_updated_HE_feature_correlation.pdf")
+ggsave(p2,filename = fname2, width = 30, height =30,units="in", dpi=300)
+ print(p2) 
+```
+# Bacterial_status
+
+
+```{r}
+Processed_HE %>%
+  filter(sample_type != "Control") %>%
+  dplyr::select(-Gender,-Age,-expired_age,-Race,-smoking_history,-smoking_status,-Alcohol_history, -Alcohol_status,-old_id,-Primary.diagnosis,-X,-clust_labs,-sample_type, -new_labs) ->b1
+
+# stats
+dunn_for_figure_b<-get_stats(b1,"Bacteria_present",
+                             folder_name = "figures/Bacterial_presence/statistical_test_results/",type = "categorical") %>% rstatix::add_y_position() %>%
+  filter(feature %in% label_order) %>%
+   transform(feature = factor(feature, levels = c("Abscess","Arterial\nthrombi","Bacteria","Alveolar\nHemorrhage","Edema","Necrosis","PMN","Lympho","AT2\nhyperplasia","Hyaline\nmembranes","Fibrosis")))
+
+# Make plots 
+
+# Create points for outliers
+b1 %>%
+   gather("feature","score",-Bacteria_present,-CaseID) %>% 
+   group_by(feature, Bacteria_present) %>% 
+   mutate(outlier_score = quantile(score, .75) + 1.50*IQR(score)) %>% 
+   mutate(outlier = ifelse(score > (quantile(score, .75) + 1.50*IQR(score)) & Bacteria_present == "No","#f03b20",NA)) %>% 
+   mutate(outlier = ifelse(score > (quantile(score, .75) + 1.50*IQR(score)) & Bacteria_present == "Yes","#207686",outlier)) %>%
+   mutate(outlier = ifelse(score < (quantile(score, .25) - 1.50*IQR(score)) & Bacteria_present == "No","#f03b20",outlier)) %>%
+   mutate(outlier = ifelse(score < (quantile(score, .25) - 1.50*IQR(score)) & Bacteria_present == "Yes","#207686",outlier)) %>% 
+   mutate(feature = str_replace_all(feature," ","\n")) %>%
+   transform(Bacteria_present = as.factor(Bacteria_present)) %>%
+   filter(feature %in% label_order) %>%
+   transform(feature = factor(feature, levels = c("Abscess","Arterial\nthrombi","Bacteria","Alveolar\nHemorrhage","Edema","Necrosis","PMN","Lympho","AT2\nhyperplasia","Hyaline\nmembranes","Fibrosis")))-> data_for_plot_b
+
+make_boxplots_dotplots(data_for_plot_b,
+                       folder_name = "figures/Bacterial_presence/",plot_type = "bv",varb_name = "Bacteria_present", stats = dunn_for_figure_b,bx_color = c("#f03b20","#207686"), width = 16,height = 4,xlab = "Visible bacteria in the lung",dtyp = "HE")
+```
+# Supplemental fig 2B
+
+```{r}
+# dummy stats because none of these are significant
+dunn_for_figure_bb<-get_stats(b1,"Bacteria_present",
+                             folder_name = "figures/Bacterial_presence/statistical_test_results/",type = "categorical") %>% rstatix::add_y_position() %>%
+  filter(!feature %in% label_order)
+
+# Make plots 
+
+# Create points for outliers
+b1 %>%
+   gather("feature","score",-Bacteria_present,-CaseID) %>% 
+   group_by(feature, Bacteria_present) %>% 
+   mutate(outlier_score = quantile(score, .75) + 1.50*IQR(score)) %>% 
+   mutate(outlier = ifelse(score > (quantile(score, .75) + 1.50*IQR(score)) & Bacteria_present == "No","#f03b20",NA)) %>% 
+   mutate(outlier = ifelse(score > (quantile(score, .75) + 1.50*IQR(score)) & Bacteria_present == "Yes","#207686",outlier)) %>%
+   mutate(outlier = ifelse(score < (quantile(score, .25) - 1.50*IQR(score)) & Bacteria_present == "No","#f03b20",outlier)) %>%
+   mutate(outlier = ifelse(score < (quantile(score, .25) - 1.50*IQR(score)) & Bacteria_present == "Yes","#207686",outlier)) %>% 
+   mutate(feature = str_replace_all(feature," ","\n")) %>%
+   transform(Bacteria_present = as.factor(Bacteria_present)) %>%
+   filter(!feature %in% label_order) -> data_for_plot_bb
+
+make_boxplots_dotplots(data_for_plot_bb,stats = dunn_for_figure_bb,
+                       folder_name = "figures/Supplemental_figures/Figure2B_",plot_type = "bv",varb_name = "Bacteria_present",bx_color = c("#f03b20","#207686"), width = 13,height = 4,xlab = "Visible bacteria in the lung",dtyp = "HE")
+```
+
+
+# Both SCV2 positive and Bacteria positive - 4 samples 
+
+
+```{r}
+Processed_HE %>%
+  filter(Bacteria_present == "Yes" & sample_type == "SCV2 Pneumonia")
+```
+
+
+
+
+
+# Heatmap
+
+
+# Generate heatmap
+
+```{r}
+# reorder leaves in hclust
+
+hcopt <- function(d, HC=NULL, method = "ward.D", members = NULL)
+{
+  if ( is.null(HC) ) { 
+    HC <- hclust(d,method=method,members=members)
+  }
+  ORD <- cba::order.optimal(d,merge=HC$merge)
+  HC$merge <- ORD$merge
+  HC$order <- ORD$order
+  HC
+}
+
+# create a copy and change column names
+HE_scaled_data2<-HE_scaled_data
+colnames(HE_scaled_data2)<-str_replace(colnames(HE_scaled_data2),"\n"," ")
+
+
+ho_row<-hcopt(dist(HE_scaled_data2),method="average") # for samples
+ho_col <- hcopt(dist(t(HE_scaled_data2)),method="average") # for features
+```
+
+
+# Heatmap
+
+```{r}
+library(circlize)
+
+labels[order(rownames(HE_scaled_data2)),] %>% 
+  mutate(Primary.diagnosis = ifelse(Primary.diagnosis == "Interstetial Pneumonia","Interstitial Pneumonia", Primary.diagnosis)) %>% 
+  mutate(Primary.diagnosis = ifelse(CaseID == "10-87","Bronchopneumonia",Primary.diagnosis)) %>%
+  dplyr::select(CaseID, "Cluster labels" = new_labs,"Sample type" =  sample_type) %>%
+  column_to_rownames("CaseID") -> full_labs2
+
+
+tt<-ComplexHeatmap::HeatmapAnnotation(df = full_labs2,
+                                      "Cluster Names" = anno_block( labels = c("Normal\nAdjacent","Suppurative","DAD",
+                                                                               "Chronic intersitial",
+                                                                               "Hemorrhagic","Mixed","Necrosuppurative"),
+                                                                    height = unit(4,"mm"),
+                                                                    labels_gp = gpar(col = c("#68de6c","darkgreen","orange",
+                                                                                             "red","#f578da","blue","#50c1e6"), fontface ="bold",fontsize = 12)),
+                                       simple_anno_size = unit(1, "cm"), height = unit(4, "cm"), annotation_name_gp = gpar(fontsize = 16,fontface ="bold"),
+                                            col = list("Cluster labels" = c("I" = "lightgreen",
+                                                                            "II" = "darkgreen",
+                                                                            "III" = "orange",
+                                                                            "IV" = "red",
+                                                                             "V" ="pink",
+                                                                             "VI" = "blue",
+                                                                                 "VII" = "lightblue"),
+                                                    "Sample type" = c("Pneumonia" = "#ee875a",
+                                                                      "Control" ="#008080",
+                                                                     "SCV2 Pneumonia" = "#bf3952")),
+                                 annotation_legend_param = list(
+                                         "Cluster labels" = list(labels_gp = gpar(fontsize = 14),
+                                                                 legend_gp = gpar(fontsize = 14),
+                                                                 direction = "vertical", title_gp = gpar(fontsize = 16)),
+                                        "Sample type" = list(labels_gp = gpar(fontsize = 14),
+                                                             legend_gp = gpar(fontsize = 14), 
+                                                             title_gp = gpar(fontsize = 16))))
+                                      
+                                      
+                                      
+                                      
+dend = as.dendrogram(CC_euc_scaled[[7]]$consensusTree)
+dend = color_branches(dend,K=7, groupLabels = T)
+
+
+heatmap<-ComplexHeatmap::Heatmap(t(HE_scaled_data2),show_column_names = FALSE,col =  colorRamp2( c(0,0.25, 0.5,0.75, 1), 
+                                                                                                c("#F9EDEC","#F0D2D0",
+                                                                                                  "#E2A5A1", "#9f3172","#71134a")),
+                                 column_title ="Samples", row_title = "Histopathology Features", 
+                                 cluster_rows = ho_col,cluster_columns = CC_euc_scaled[[7]]$consensusTree,
+                                 top_annotation = tt, column_split = 7, 
+                                 heatmap_legend_param = list(title = "Scaled histopathology score\n",
+                                                             labels_gp = gpar(fontsize = 14),
+                                                             legends_gp = gpar(fontsize = 14, fontface = "bold"), legend_height = unit(6, "cm"),
+                                                             title_gp = gpar(fontsize = 16), direction = "vertical", nrow = 1), 
+                                 row_names_gp = gpar(fontsize = 16), column_dend_height = unit(5, "cm"),
+                                 row_title_gp = gpar(fontsize = 16,fontface = "bold"),
+                                 column_title_gp = gpar(fontsize = 16,fontface = "bold"))
+ 
+
+tiff("figures/Heatmaps/Human_Heatmap_HE_clusters_complexV2.tiff",width = 20,height = 18,pointsize = 20)
+draw(heatmap)
+dev.off()
+
+pdf("figures/Heatmaps/Human_Heatmap_HE_clusters_complexV2.pdf",width = 22,height = 10,pointsize = 2)
+draw(heatmap)
+dev.off()
+
+
+```
+
+
+# Comparing SCV2/bacteria enrichment across each cluster
+
+```{r}
+
+fishers_result_cl<-data.frame()
+
+for (i in c("I","II","III","IV","V","VI","VII")){
+  full_labs2 %>%
+  mutate(new_clust_labs_for_fish = ifelse(`Cluster labels` == i,i,"All_other_clusters")) %>%
+  mutate(new_sample_type = ifelse(`Sample type` == "SCV2 Pneumonia","SCV2","No_SCV2")) %>%
+  group_by(new_clust_labs_for_fish,new_sample_type) %>%
+  count() %>%
+  spread(new_clust_labs_for_fish,n,fill = 0) %>%
+  column_to_rownames("new_sample_type") %>%
+  fisher_test(detailed = TRUE) %>%
+  mutate("comparison" = paste0(i,"_vs_all_other_clusters")) ->df_res 
+ fishers_result_cl<-rbind(fishers_result_cl,df_res)
+}
+
+cl_pl<-full_labs2 %>%
+  mutate(new_clust_labs_for_fish = ifelse(`Cluster labels` == i,i,"All_other_clusters")) %>%
+  mutate(SCV2_present = ifelse(`Sample type` == "SCV2 Pneumonia","Yes","No")) %>%
+  ggplot(aes(`Cluster labels`,fill = SCV2_present))+
+  geom_bar(position = "fill")+
+   scale_y_continuous(labels = scales::percent) +
+    ylab("Percentage of samples")+
+  scale_fill_manual(values = c("#e87c1e","#bf3952"))+
+  ggstyle()
+
+ggsave(cl_pl,filename = "figures/Pneumo_vs_SARS/proportions_of_scv2_yes_no_across_clusters.pdf",width = 6,height = 4)
+
+
+fishers_result_bl<-data.frame()
+
+for (i in c("I","II","III","IV","V","VI","VII")){
+ HE_scores_with_clust_labels_and_bac %>%
+  select(CaseID,new_labs,sample_type,Bacteria_present) %>%
+  mutate(new_clust_labs_for_fish = ifelse(new_labs == i,i,"All_other_clusters")) %>%
+  group_by(new_clust_labs_for_fish,Bacteria_present) %>%
+  count() %>%
+  spread(new_clust_labs_for_fish,n,fill = 0) %>%
+  column_to_rownames("Bacteria_present") %>%
+  fisher_test(detailed = TRUE) %>%
+  mutate("comparison" = paste0("Bacteria_yes_no_cluster_",i,"_vs_all_other_clusters")) ->df_res2 
+ fishers_result_bl<-rbind(fishers_result_bl,df_res2)
+}
+
+bl_pl<-HE_scores_with_clust_labels_and_bac %>%
+  select(CaseID,new_labs,sample_type,Bacteria_present) %>%
+  mutate(new_clust_labs_for_fish = ifelse(new_labs == i,i,"All_other_clusters")) %>%
+  ggplot(aes(new_labs, fill = Bacteria_present))+
+  geom_bar(position = "fill")+
+  scale_y_continuous(labels = scales::percent) +
+  ylab("Percentage of samples")+
+  scale_fill_manual(values = c("#e87c1e","#5D737E"))+
+  ggstyle() 
+
+ggsave(bl_pl,filename = "figures/Bacterial_presence/proportions_of_bacteria_yes_no_across_clusters.pdf",width = 6,height = 4)
+
+#55505C
+
+write.csv(fishers_result_cl,"figures/Supplemental_data/fishers_test_comparing_scv2_enrichment_across_all_clusters.csv")
+
+write.csv(fishers_result_bl,"figures/Supplemental_data/fishers_test_comparing_bacteria_enrichment_across_all_clusters.csv")
+
+
+```
+
+
+
+
+
+# Variable importance 
+
+```{r}
+library(randomForest)
+library(caret)
+set.seed(1002)
+
+library(colorspace)
+hcl_palettes("Sequential (multi-hue)", n=8, plot=TRUE)
+
+
+HE_scaled_data %>% 
+  rownames_to_column("X") %>%
+  separate("X", into = c("CaseID","X"), sep = " ") %>%
+  inner_join(labels %>% dplyr::select(CaseID,new_labs), by = c("CaseID")) %>% 
+  transform(new_labs = as.factor(new_labs)) %>%
+  dplyr::select(-X) %>%
+  column_to_rownames("CaseID")-> HE_for_rf
+
+randf_results<-randomForest(new_labs~., HE_for_rf , proximity = TRUE, importance= TRUE, ntree = 10000, mtry = 5)
+print(randf_results)
+
+# Variable importance
+
+hist(treesize(randf_results),
+     main = "No. of Nodes for the Trees")
+
+#Variable Importance
+x<-varImpPlot(randf_results,
+           main = "Top 10 - Variable Importance") +theme(legend.position="none")
+
+ggsave(x, filename = paste0("figures/Variable_importance/VI_Top10.tiff" ), width = 30, height =7, scale=1,units="in", dpi=300)
+
+varb_imp<-importance(randf_results)
+
+
+#HE_scores_with_clust_labels_and_bac %>%
+ # dplyr::select(-Gender,-Age,-expired_age,-Race,-smoking_history,-smoking_status,-Alcohol_history, -Alcohol_status,-old_id,-Primary.diagnosis,-X,-Bacteria_present,-clust_labs,-sample_type,-new_type) %>%
+ # gather("feature","score",-new_labs,-CaseID) %>%
+#  group_by(new_labs,feature) %>%
+#  summarise(mean_score = mean(score)) %>%
+#  ungroup() %>% group_by(feature) %>% 
+#  arrange(desc(mean_score),.by_group = TRUE)-> average_scores
+
+top_features<-varb_imp %>%
+    data.frame() %>% 
+    dplyr::select(-MeanDecreaseAccuracy,-MeanDecreaseGini) %>%
+    rownames_to_column("feature") %>%
+    gather("cluster","score",-feature) %>%
+    mutate(feature = str_replace(feature,"\\.","\n")) %>%
+    filter(score > 0) %>%
+    arrange(desc(score)) %>%
+    group_by(cluster) %>%
+    slice_head(n = 6)
+
+HE_scores_with_clust_labels_and_bac %>%
+  dplyr::select(-Gender,-Age,-expired_age,-Race,-smoking_history,-smoking_status,-Alcohol_history, -Alcohol_status,-old_id,-Primary.diagnosis,-X,-Bacteria_present,-clust_labs,-sample_type,-new_type) %>%
+  gather("feature","score",-new_labs,-CaseID) -> v1
+
+vi_color<-data.frame()
+for (i in unique(v1$new_labs)){
+
+top_features %>%
+  filter(cluster == i) -> selected_clust
+
+for (j in selected_clust$feature){
+ v1 %>%
+  filter(feature == j) %>%
+  mutate(vi_feature = ifelse(new_labs == i,i,"all_other_cluster_mean")) %>%
+  group_by(vi_feature) %>%
+  summarize(mean = mean(score)) %>%
+  arrange(mean) -> v2
+  
+  v2$max_mean <- max(v2$mean)
+  
+  v2 %>%
+    mutate(VI_Group = ifelse(mean >= max_mean,"Higher","Lower")) %>%
+    mutate(feature = j) %>%
+    filter(vi_feature != "all_other_cluster_mean")-> v3
+  vi_color = rbind(vi_color,v3)
+  
+}
+}
+
+pp<-top_features %>%
+   # inner_join(average_scores,by = c("cluster" = "new_labs","feature")) %>% 
+    inner_join(vi_color,by = c("cluster" = "vi_feature","feature")) %>%
+    mutate(feature = str_replace(feature,"\n"," ")) %>%
+    ggplot(mapping = aes(reorder_within(feature, -score,cluster),score)) +
+    geom_point(aes(color = VI_Group), size= 5)+ 
+    facet_grid(~cluster,scales = "free",space = "free")+
+    theme_classic()+
+    scale_x_reordered()+
+    scale_colour_manual(values = c("#bf3952","#324aa8"))+
+  #  colorspace::scale_color_continuous_sequential(palette = "Red-Blue") +
+    theme(axis.text.x = element_text(angle = 45, hjust = 1,size = 16,face = "bold"), legend.position="none", text = element_text(size = 16,face ="bold"),panel.border = element_rect(color = "black", fill = NA, size = 1), strip.text.x.top = element_text(size = 16,face = "bold"),axis.text = element_text(size =16,face = "bold"), axis.title = element_text(face = "bold")) +
+    xlab("Features") +
+    ylab("Variable Importance Score")+
+    ggstyle()
+
+ggsave(pp, filename = paste0("figures/Variable_importance/VIcluster_all.tiff" ), width = 16, height =6, scale=1,units="in", dpi=300)
+ggsave(pp, filename = paste0("figures/Variable_importance/VIcluster_all.pdf" ), width = 16, height =6, scale=1,units="in", dpi=300)
+
+```
+
+#mclust
+
+```{r}
+library(mclust)
+mcresults<-Mclust(HE_scaled_data, G = 1:15)
+
+BIC_data<-mcresults$BIC
+options(bitmapType='cairo')
+tiff("figures/Clustering/mclust.tiff")
+plot(BIC_data)
+dev.off()
+# do this to convert it to dataframe. As.data.frame doesn't work because of mclustresult format. I tried multiple things and ultimately this worked. 
+write.csv(BIC_data,"figures/Clustering/mclust.csv")
+mclust_results<-read.csv("figures/Clustering/mclust.csv")
+summary(mcresults)
+```
+
+
+# mIHC data
+
+# Correlation to HE feature
+
+# Comparing mIHC and HE - correlation scores
+
+```{r}
+mihc_scores2 %>%
+    inner_join(HE_scores %>% 
+                 rownames_to_column("slide_id") %>% 
+                 separate(slide_id, into= c("slide_id","c"), sep = " " ) %>% 
+                 select(-c),by = c("slide_id")) %>% 
+  column_to_rownames("slide_id")-> combined_scaled_data
+
+mIHC_feature_list<-colnames(mihc_scores2 %>% dplyr::select(-slide_id))
+HE_feature_list<-colnames(HE_scores)
+
+cor_df<-data.frame(matrix(nrow = 18, ncol = 5))
+colnames(cor_df)<-mIHC_feature_list
+rownames(cor_df)<-HE_feature_list
+pval<-data.frame(matrix(nrow = 18, ncol = 5))
+a = 1
+for (i in 6:23) {
+  b = 1
+  for (j in 1:5) {
+    cor_df[a,b]<-corr.test(combined_scaled_data[,i],combined_scaled_data[,j], method ="spearman", adjust = "BH")$r
+    pval[a,b]<-corr.test(combined_scaled_data[,i],combined_scaled_data[,j], method ="spearman", adjust = "BH")$p.adj # make insig ones 0
+    if(pval[a,b]< 0.05){
+      cor_df[a,b]<- cor_df[a,b]
+    }
+    else if(pval[a,b]> 0.05){
+      cor_df[a,b]<- 0
+    }
+    b = b+1
+  }
+  a = a+1
+}
+
+#combined_scaled_data %>%
+cor_df %>%
+  t() %>%
+  ggcorrplot(lab = TRUE,tl.cex = 20,lab_size = 8) +
+  ggstyle() ->p
+
+
+ggsave(p,filename = "figures/Correlation/HE_vs_mIHC_corr_test_results.tiff", width = 12, height = 20, scale=0.8,units="in", dpi=300)
+ggsave(p,filename = "figures/Correlation/HE_vs_mIHC_corr_test_results.pdf", width = 12, height = 20, scale=0.8,units="in", dpi=300)
+
+```
+
+
+
+
+# mIHC new_type - Control vs all pneumonia
+
+
+```{r}
+mihc_scores2 %>%
+  left_join(HE_scores_with_clust_labels_and_bac, by = c("slide_id"="CaseID")) %>%
+  dplyr::select("CaseID" =slide_id, CD19, CD4, CD8, MPO, CD68, Bacteria_present, sample_type, Primary.diagnosis, clust_labs,new_labs,old_id, Age, expired_age, Gender, Race, smoking_history, smoking_status, Alcohol_history,Alcohol_status, new_type)->mihc_scores_with_clust_labels_and_bac
+
+write.csv(mihc_scores_with_clust_labels_and_bac,"data/mIHC_scores_with_all_labels.csv")
+
+mihc_scores_with_clust_labels_and_bac %>%
+   dplyr::select(-Gender,-Age,-expired_age,-Race,-smoking_history,-smoking_status,-Alcohol_history, -Alcohol_status,-old_id,-Primary.diagnosis, -sample_type, -Bacteria_present, -clust_labs, -new_labs) -> mihc_for_new_type
+
+
+# This is actually wilcox test change the code name
+t_test_for_figure<-get_stats(mihc_for_new_type,"new_type",
+                             folder_name = "figures/mfIHC/statistical_test_results/",
+                             type = "continuous")  %>% rstatix::add_y_position(step.increase = 0.5)
+
+mihc_for_new_type %>%
+   gather("feature","score", -new_type, -CaseID) %>% 
+   filter(score > 0) %>% # 0 value causes issues 
+   mutate(score = log(score)) %>%
+   group_by(feature, new_type) %>%
+   mutate(outlier = ifelse(score > (quantile(score, .75) + 1.50*IQR(score)) & new_type == "Pneumonia","#B77979",NA)) %>%
+   mutate(outlier = ifelse(score > (quantile(score, .75) + 1.50*IQR(score)) & new_type == "Control","#5C9687",outlier)) %>%
+   mutate(outlier = ifelse(score < (quantile(score, .25) - 1.50*IQR(score)) & new_type == "Pneumonia","#B77979",outlier)) %>%
+   mutate(outlier = ifelse(score < (quantile(score, .25) - 1.50*IQR(score)) & new_type == "Control","#5C9687",outlier)) %>%
+   transform(new_type = as.factor(new_type))-> data_for_plot_mihc_new_type
+  
+make_boxplots_dotplots(data_for_plot_mihc_new_type,
+                       stats = t_test_for_figure, 
+                       plot_type = "bvm",varb_name = "new_type",
+                           folder_name = "figures/mfIHC/",
+                       dtype = "mihc",width = 15,height = 5, xlab = "Sample types",
+                       bx_color = c("#B77979","#5C9687"))  
+
+```
+
+
+# mIHC sample type - SARS-CoV2 vs Pneumonia
+# sample 13-82 has score of 0 for CD19 and is not displayed on this plot 
+```{r}
+
+mihc_scores_with_clust_labels_and_bac %>% 
+  filter(sample_type != "Control") %>%
+  mutate(scv2_status = ifelse(sample_type == "SCV2 Pneumonia","Yes","No")) %>%
+  dplyr::select(-Gender,-Age,-expired_age,-Race,-smoking_history,-smoking_status,-Alcohol_history, -Alcohol_status,-old_id,-Primary.diagnosis,-sample_type, -new_type, -Bacteria_present, -clust_labs, -new_labs) -> mihc_for_sc
+
+t_test_for_figure_sc<-get_stats(mihc_for_sc,"scv2_status",
+                                folder_name = "figures/mfIHC/statistical_test_results/",
+                                type = "continuous") %>% rstatix::add_y_position(step.increase = 0.5)
+
+mihc_for_sc %>%
+   gather("feature","score", -scv2_status, -CaseID) %>% 
+   filter(score > 0) %>% 
+   mutate(score = log(score)) %>% 
+   group_by(feature, scv2_status) %>%
+   mutate(outlier = ifelse(score > (quantile(score, .75) + 1.50*IQR(score)) & scv2_status == "No","#b35806",NA)) %>%
+   mutate(outlier = ifelse(score > (quantile(score, .75) + 1.50*IQR(score)) & scv2_status == "Yes","#5ab4ac",outlier)) %>%
+   mutate(outlier = ifelse(score < (quantile(score, .25) - 1.50*IQR(score)) & scv2_status == "No","#b35806",outlier)) %>%
+   mutate(outlier = ifelse(score < (quantile(score, .25) - 1.50*IQR(score)) & scv2_status == "Yes","#5ab4ac",outlier)) %>%
+   mutate(feature = str_replace_all(feature," ","\n")) %>%
+   transform(scv2_status = as.factor(scv2_status))-> data_for_plot_mihc_s
+
+make_boxplots_dotplots(data_for_plot_mihc_s,
+                       plot_type = "bvm",
+                       varb_name = "scv2_status", 
+                       folder_name = "figures/mfIHC/",
+                       stats = t_test_for_figure_sc,
+                       bx_color  = c("#b35806","#5ab4ac"), width = 15,height = 4,xlab = "SARS-CoV2 Positive", dtype = "mIHC")
+
+```
+
+#mIHC in bacteria
+
+
+```{r}
+
+mihc_scores_with_clust_labels_and_bac %>% 
+  filter(sample_type != "Control") %>%
+  dplyr::select(-Gender,-Age,-expired_age,-Race,-smoking_history,-smoking_status,-Alcohol_history, -Alcohol_status,-old_id,-Primary.diagnosis,-sample_type, -new_type, -clust_labs, -new_labs) -> mihc_for_b
+
+t_test_for_figure_b<-get_stats(mihc_for_b,
+                               folder_name = "figures/mfIHC/statistical_test_results/",
+                               "Bacteria_present",type = "continuous") %>% rstatix::add_y_position(step.increase = 0.5)
+
+mihc_for_b %>%
+   gather("feature","score", -Bacteria_present, -CaseID) %>% 
+   filter(score > 0) %>%
+   mutate(score = log(score)) %>%
+   group_by(feature, Bacteria_present) %>% 
+   mutate(outlier = ifelse(score > (quantile(score, .75) + 1.50*IQR(score)) & Bacteria_present == "No","#f03b20",NA)) %>% 
+   mutate(outlier = ifelse(score > (quantile(score, .75) + 1.50*IQR(score)) & Bacteria_present == "Yes","#207686",outlier)) %>%
+   mutate(outlier = ifelse(score < (quantile(score, .25) - 1.50*IQR(score)) & Bacteria_present == "No","#f03b20",outlier)) %>%
+   mutate(outlier = ifelse(score < (quantile(score, .25) - 1.50*IQR(score)) & Bacteria_present == "Yes","#207686",outlier)) %>% 
+   transform(Bacteria_present = as.factor(Bacteria_present))-> data_for_plot_mihc_b
+
+
+make_boxplots_dotplots(data_for_plot_mihc_b,
+                       plot_type = "bvm",
+                       varb_name = "Bacteria_present", 
+                       folder_name = "figures/mfIHC/",
+                       stats = t_test_for_figure_b,
+                       bx_color  = c("#f03b20","#207686"), width = 15,height = 4,xlab = "Visible bacteria in the lung", dtype = "mIHC")
+
+
+```
+
+
+
+#mIHC by clusters
+
+
+```{r}
+
+colors = c( c('#b35806','#f1a340','#fee0b6','#d8daeb','#998ec3','#542788','#fc9272'))
+mihc_scores_with_clust_labels_and_bac %>% 
+  dplyr::select(-Gender,-Age,-expired_age,-Race,-smoking_history,-smoking_status,-Alcohol_history, -Alcohol_status,-old_id,-Primary.diagnosis,-sample_type, -new_type, -Bacteria_present,-clust_labs) %>% transform(new_labs = as.factor(new_labs)) -> mihc_for_clust
+
+
+mihc_for_clust %>%
+      gather("feature","score",-new_labs,-CaseID) %>% 
+      group_by(feature) %>%
+      wilcox_test(score ~ new_labs, paired = FALSE, ref.group = "I", p.adjust.method = "bonferroni") -> all_stats
+
+write.csv(all_stats,"figures/mfIHC/statistical_test_results/all_clusters.csv")
+    all_stats %>%
+      filter(p.adj < 0.05) %>%
+      add_y_position(step.increase = 0.08)-> all_stats
+
+
+# Not using outliers for this plot so ignore this one
+mihc_for_clust %>%
+   gather("feature","score", -new_labs, -CaseID) %>% 
+   mutate(score = log(score)) %>% 
+   group_by(feature, new_labs) %>% 
+   mutate(outlier = ifelse(score > (quantile(score, .75) + 1.50*IQR(score)) & new_labs == "I",'#b35806',NA)) %>% 
+   mutate(outlier = ifelse(score > (quantile(score, .75) + 1.50*IQR(score)) & new_labs == "II",'#f1a340',outlier)) %>%
+   mutate(outlier = ifelse(score > (quantile(score, .75) + 1.50*IQR(score)) & new_labs == "III",'#fee0b6',outlier)) %>%
+   mutate(outlier = ifelse(score > (quantile(score, .75) + 1.50*IQR(score)) & new_labs == "IV",'#d8daeb',outlier)) %>%
+   mutate(outlier = ifelse(score > (quantile(score, .75) + 1.50*IQR(score)) & new_labs == "V",'#998ec3',outlier)) %>%
+   mutate(outlier = ifelse(score > (quantile(score, .75) + 1.50*IQR(score)) & new_labs == "VI",'#542788',outlier)) %>%
+mutate(outlier = ifelse(score > (quantile(score, .75) + 1.50*IQR(score)) & new_labs == "VII",'#fc9272',outlier)) %>%
+
+   mutate(outlier = ifelse(score < (quantile(score, .25) - 1.50*IQR(score)) & new_labs == "I",'#b35806',NA)) %>% 
+   mutate(outlier = ifelse(score < (quantile(score, .25) - 1.50*IQR(score)) & new_labs == "II",'#f1a340',outlier)) %>%
+   mutate(outlier = ifelse(score < (quantile(score, .25) - 1.50*IQR(score)) & new_labs == "III",'#fee0b6',outlier)) %>%
+   mutate(outlier = ifelse(score < (quantile(score, .25) - 1.50*IQR(score)) & new_labs == "IV",'#d8daeb',outlier)) %>%
+   mutate(outlier = ifelse(score < (quantile(score, .25) - 1.50*IQR(score)) & new_labs == "V",'#998ec3',outlier)) %>%
+   mutate(outlier = ifelse(score < (quantile(score, .25) - 1.50*IQR(score)) & new_labs == "VI",'#542788',outlier)) %>%
+   mutate(outlier = ifelse(score < (quantile(score, .25) - 1.50*IQR(score)) & new_labs == "VII",'#fc9272',outlier)) %>%
+   transform(new_labs = as.factor(new_labs))-> data_for_plot_mihc_clust
+
+
+# Make plots
+for (i in c("CD8","CD4","CD19","CD68","MPO")){
+
+  mihc_for_clust %>%
+        gather("feature","score",-new_labs,-CaseID)  %>% 
+        filter(feature == i) ->dd 
+        
+        all_stats %>%
+        filter(feature == i) -> stats
+        
+     if(i %in% c("CD4","CD8","CD19")) { 
+        pl<- dd %>%
+        ggplot(aes(new_labs, score)) +
+        geom_violin(width = 1, fill = "white") +
+        geom_boxplot(alpha = 2, outlier.shape = NA, width= 0.3, aes(fill = new_labs)) +
+        facet_wrap(~feature)+
+        scale_fill_manual(values =  c('#b35806','#f1a340','#fee0b6','#d8daeb','#998ec3','#542788','#fc9272'))+
+        theme(axis.text.x = element_text(angle = 45, hjust = 1, vjust = 1, size = 20),strip.text = element_text(size = 13)) +
+        theme(axis.text.y = element_text(size = 20), axis.title.x.bottom = element_text(size = 20), axis.title.y.left = element_text(size = 20))+ 
+        xlab("Clusters") +
+        stat_pvalue_manual(stats, x = "group2", label = "p.adj.signif",y.position = max(dd$score)+0.01, size = 10) +
+        ggstyle()+
+        theme(legend.position="none")+
+        ylab(paste0("Fraction of cells"))
+     
+    fname1<-paste0("figures/mfIHC/","wilcoxon_test",i,"_new_labs_continuous_human", "_boxplots_plots.tiff")
+    fname2<-paste0("figures/mfIHC/","wilcoxon_test",i,"_new_labs_continuous_human", "_boxplots_plots.pdf")
+    ggsave(pl,filename = fname1, width = 8, height = 8, scale=1, unit= "in", dpi=300)
+    ggsave(pl,filename = fname2, width = 8, height = 8, scale=1, unit= "in", dpi=300)
+ 
+   }
+  
+  else{
+    
+    pl<- dd %>%
+      ggplot(aes(new_labs, log(score))) +
+      geom_violin(width = 1, fill = "white") +
+      geom_boxplot(alpha = 2, outlier.shape = NA, width= 0.3, aes(fill = new_labs)) +
+      facet_wrap(~feature)+
+      scale_fill_manual(values = colors)+
+      theme(axis.text.x = element_text(angle = 45, hjust = 1, vjust = 1, size = 20),strip.text = element_text(size = 13)) +
+      theme(axis.text.y = element_text(size = 20), axis.title.x.bottom = element_text(size = 20), axis.title.y.left = element_text(size = 20))+ 
+      xlab("Clusters")+
+      stat_pvalue_manual(stats, x = "group2", label = "p.adj.signif",y.position = max(dd$score)+0.01, size = 10) +
+      ggstyle()+
+      theme(legend.position="none")+
+      ylab(paste0("Fraction of area occupied by positive signal (log scaled)"))
+     
+    
+      fname1<-paste0("figures/mfIHC/","wilcoxon_test",i,"_logged_new_labs_continuous_human", "_boxplots_plots.tiff")
+      fname2<-paste0("figures/mfIHC/","wilcoxon_test",i,"_logged_new_labs_continuous_human", "_boxplots_plots.pdf")
+    ggsave(pl,filename = fname1, width = 8, height = 8, scale=1, unit= "in", dpi=300)
+    ggsave(pl,filename = fname2, width = 8, height = 8, scale=1, unit= "in", dpi=300)
+    
+  }
+}
+```
+
+
+# Heatmap
+
+```{r}
+
+mihc_scores_with_clust_labels_and_bac %>% 
+  dplyr::select(-Gender,-Age,-expired_age,-Race,-smoking_history,-smoking_status,-Alcohol_history, -Alcohol_status,-old_id,-Primary.diagnosis,-sample_type, -new_type, -Bacteria_present,-clust_labs) %>% transform(new_labs = as.factor(new_labs)) -> mihc_for_clust
+
+
+mihc_for_clust %>%
+  gather("feature","score",-new_labs,-CaseID) %>% 
+  group_by(feature, new_labs) %>%
+  summarize(median_intensity = median(score) ) %>%
+  spread(feature, median_intensity)-> mihc_for_clust2
+  
+
+# scaling
+mihc_for_clust2_scaled<-caret::preProcess(mihc_for_clust2 %>% column_to_rownames("new_labs"), method=c("range"))
+mihc_for_clust2_scaled<-predict(mihc_for_clust2_scaled,mihc_for_clust2  %>% column_to_rownames("new_labs"))
+
+# arrange
+mihc_for_clust2_scaled<- mihc_for_clust2_scaled %>% select(CD8, CD4, CD19, CD68, MPO)
+
+
+# Get the stats
+mihc_for_clust %>%
+      gather("feature","score",-new_labs,-CaseID) %>% 
+      group_by(feature) %>%
+      wilcox_test(score ~ new_labs, paired = FALSE, ref.group = "I", p.adjust.method = "bonferroni") %>% 
+      select(feature,group2,p.adj.signif) %>% 
+      mutate(p.adj.signif = ifelse(p.adj.signif == "ns","","*")) %>%
+      spread(feature,p.adj.signif) %>%
+      column_to_rownames("group2") %>%
+      select(CD8, CD4, CD19, CD68, MPO)-> stat_mat
+
+# Create dummy dataframe for cluster I 
+df1<-data.frame(group2 = "I",CD8 = "", CD4 = "", CD19 = "", CD68 = "", MPO = "") %>% column_to_rownames("group2")
+
+# create a big dataframe
+stat_mat2<-rbind(df1,stat_mat)
+
+# Plotting
+
+mfIHC_heatmap<-ComplexHeatmap::Heatmap(as.matrix(mihc_for_clust2_scaled), cell_fun = function(j, i, x, y, width, height, fill) {
+        if(is.na(stat_mat2[i,j])){
+        }
+        else {
+         grid.text(stat_mat2[i, j], x, y, gp = gpar(fontsize = 60, col = "black"))  
+        }
+},col =  colorRamp2( c(0,0.2,0.5,0.8,1), c("#F9EDEC","#F0D2D0","#E2A5A1", "#9f3172","#71134a")),column_title ="Immune cell types", row_title = "Clusters", cluster_rows = FALSE,cluster_columns = FALSE, show_column_dend = FALSE, show_row_dend = FALSE, heatmap_legend_param = list(title = "Median fraction of\nimmune cells or \narea per cluster\n",labels_gp = gpar(fontsize = 25),legends_gp = gpar(fontsize = 25), title_gp = gpar(fontsize = 30),  direction = "vertical", nrow = 1), row_names_gp = gpar(fontsize = 30),row_title_gp = gpar(fontsize = 30),column_names_gp = gpar(fontsize = 30),
+                        column_title_gp = gpar(fontsize = 30),row_names_side = "left")  
+
+tiff("figures/mfIHC/Human_Heatmap_mfIHC_complexV2.tiff",width = 20,height = 20,pointsize = 20)
+draw(mfIHC_heatmap, merge_legend = TRUE)
+dev.off()
+
+pdf("figures/mfIHC/Human_Heatmap_mfIHC_complexV2.pdf",width = 12,height =10,pointsize = 20)
+draw(mfIHC_heatmap, merge_legend = TRUE)
+dev.off()
+
+
+```
+
+
+
+
+# Metadata
+
+```{r}
+HE_scaled_data %>% 
+  rownames_to_column("X") %>% 
+  separate(X, into = c("X","extra"), sep = " ") %>%
+  dplyr::select("X") -> HE_scaled_data_clean
+
+library(gtsummary)
+metadata_clean_part3 %>% 
+  right_join(HE_scaled_data_clean, by = c("CaseID" = "X"))  %>% 
+  mutate_all(~replace_na(.,"not_recorded")) %>%  
+  right_join(labels %>% dplyr::select(CaseID, Primary.diagnosis, sample_type), by = c("CaseID")) %>%
+  mutate(Status = ifelse(sample_type == "sample","Pneumonia",sample_type)) %>% 
+  mutate(Status = ifelse(sample_type == "SARS-CoV","SARS-CoV-2",sample_type)) %>%
+#  mutate(Status = ifelse(sample_type == "Control","Control",sample_type)) %>%
+  mutate("Age (years)" = as.numeric(expired_age)) %>% 
+  dplyr::select(-Age) %>% 
+  dplyr::rename("Smoking Status" ="smoking_status") %>%
+  dplyr::rename("Sex" = "Gender") %>%
+  dplyr::rename("Alcohol Status" = "Alcohol_status") %>%
+  gtsummary::tbl_summary(include = c(`Age (years)`, Sex,`Smoking Status`, Race,`Alcohol Status`), by = sample_type) %>%
+  gtsummary::bold_labels() %>%
+  modify_caption("**Human Cohort Demographics** (N = {N})") %>%
+  as_gt() %>%
+  gt::tab_style(
+    style = list(gt::cell_fill(color = '#f5ebf1')),
+    locations = gt::cells_body(columns = c(everything()))
+  ) %>%
+  gt::opt_stylize(style = 6, color = 'pink')  -> test
+
+#Sys.setenv(CHROMOTE_CHROME = "/restricted/projectnb/camplab/home/shastrya/R/x86_64-pc-linux-gnu-library/4.2/chromote")
+Sys.setenv(CHROMOTE_CHROME = "scripts/Brave/brave")
+gt::gtsave(test,file = file.path("figures/human_demographics.pdf"))
+
+```
+
+
+# Mouse data figures 
+
+
+```{r}
+# Cleaned with all columns
+
+mouse_clean_all_cols<-read.csv("data/mouse_HE_scores_cleaned_all_columns.csv")
+
+# Cleaned filtered 
+
+mouse_cleaned_dataset3<-read.csv("data/mouse_HE_scores_cleaned_filtered.csv")
+
+# Cleaned filtered, scaled to 0-1
+
+#mouse_HE_scaled<-read.csv("/restricted/projectnb/montilab-p/projects/pneumonia/results/Mouse/Mouse_HE/mouse_HE_scores_cleaned__filtered_scaled.csv") %>%
+ # column_to_rownames("X")
+
+mouse_HE_scaled<-read.csv("data/Mouse/mouse_HE_scores_cleaned__filtered_scaled.csv") %>%
+  column_to_rownames("X")
+
+
+# labels
+mouse_labels<-read.csv("data/mouse_metadata_labels") %>%
+  mutate(pathogen = ifelse(pathogen == "SARS-CoV-2 MA10 BALB/C ","SARS-CoV-2 MA10", pathogen))
+
+# renaming previous before leaf reordering - c(2,5,4,6,1,3),new_labs = c("A","B","C","D","E","F")
+rename_clusters_mouse<-data.frame(old_labs =c(2,5,3,4,1,6),new_labs = c("A","B","C","D","E","F"))
+#rename_clusters_mouse<-data.frame(old_labs = c(5,2,1,6,4,3),new_labs = c("A","B","C","D","E","F"))
+
+mouse_labels %>%
+  left_join(rename_clusters_mouse,by =c("clust_labs" = "old_labs")) -> mouse_labels
+
+
+
+# Fix labels
+mouse_HE_scaled<-clean_column_names(mouse_HE_scaled, "mouse")
+mouse_cleaned_dataset3<-clean_column_names(mouse_cleaned_dataset3,"mouse")
+
+# Mouse clustering
+
+#mouse_cc_eu_scaled<-readRDS("/restricted/projectnb/montilab-p/projects/pneumonia/results/Mouse/Mouse_HE/mouse_cc_eu_scaled.RDS")
+mouse_cc_eu_scaled<-readRDS("data/Mouse/mouse_cc_eu_scaled.RDS")
+
+```
+
+
+
+# Mouse models 
+
+```{r}
+
+library(kableExtra)
+library(dplyr)
+
+mouse_models<-read_excel("data/Excel of mouse model corrected final 12032024.xlsx") 
+  
+#x<-colnames(mouse_models) %>% str_replace_all(" ","\n") 
+#colnames(mouse_models)<- c("Pneumonia","Microbe","Strain","Route","Dose","Mouse age \\n (weeks)","Mouse \\n strain") 
+
+mouse_models %>%
+  mutate(Dose = str_replace(Dose,"10","10^")) %>%
+  mutate(Route = ifelse(Strain == "Sp3","intratracheal",Route)) %>%
+  mutate(Route = ifelse(Strain == "Sp19F", "intranasal",Route)) ->mouse_models
+
+kableExtra::kable(mouse_models %>% select(-Pneumonia),escape = F) %>% kable_styling(full_width = F,font_size = 14)  %>%
+  kable_paper() %>% 
+  pack_rows("No pneumonia control",1,2,background  = '#f5ebf1',escape = F) %>%
+  pack_rows("Bacteria",3,7,bold = T,background  = '#f5ebf1',escape = F) %>% 
+  pack_rows("Virus",8,11,bold = T,background  = '#f5ebf1') %>%
+  column_spec(5:6, width = "2cm") %>%
+  row_spec(0,background = '#a68b9b',color="white",bold = T) %>%
+  row_spec(1:2, bold = T, color = "black") %>% 
+  row_spec(3:7, bold = T, color = "black") %>%
+  row_spec(8:11, bold = T, color = "black") %>%
+  save_kable("figures/Mouse/Mouse_models_table.pdf",density = 600)
+  
+```
+
+
+
+# Mouse heatmap 
+
+# order leaves
+
+```{r}
+#ho_row<-hcopt(as.dist(mouse_cc_eu_scaled[[6]]$consensusTree),method="average") # for samples
+ho_col <- hcopt(dist(t(mouse_HE_scaled)),method="average") # for features
+```
+
+# Heatmap
+
+```{r}
+set.seed(34446543)
+library(circlize)
+library(grid)
+mouse_labs2<-mouse_labels %>% 
+             dplyr::select(X,"Cluster labels" = new_labs,"Sex" = sex,Age,"Pathogen" = pathogen, "Pathogen type" = pathogen_type,-type) %>%
+             mutate(Pathogen = ifelse(str_starts(Pathogen," "),str_remove(Pathogen," "),Pathogen)) %>%
+             mutate(Pathogen = ifelse(Pathogen == "saline","Saline",Pathogen)) %>%
+             mutate(`Pathogen type` = ifelse(`Pathogen type` == "saline","None",`Pathogen type`)) %>%
+             mutate(`Pathogen type` = str_to_title(`Pathogen type`)) %>%
+             mutate(Age = str_to_title(Age)) %>%
+             mutate(Age = ifelse(Age == "Old","Aged",Age)) %>%
+             column_to_rownames("X")
+
+mouse_HE_scaled2<-mouse_HE_scaled
+colnames(mouse_HE_scaled2)<- str_replace_all(colnames(mouse_HE_scaled2),"\n"," ") %>% 
+                             str_replace("vasculitis","Vasculitis") 
+
+
+mouse_labs2<-mouse_labs2[order(rownames(mouse_HE_scaled2)),]
+
+tt<-ComplexHeatmap::HeatmapAnnotation(df = mouse_labs2,  
+                                    simple_anno_size = unit(1, "cm"), height = unit(4, "cm"), annotation_name_gp = gpar(fontsize = 24,fontface ="bold"),
+                                col = list("Cluster labels" = c("A" ="darkgreen", 
+                                                            "B" = "lightblue",
+                                                            "C" = "red",
+                                                            "D" = "blue",
+                                                            "E" ="pink",
+                                                            "F" = "lightgreen"),
+                                           Age = c("Young" = "#a432a8", 
+                                                   "Aged" = "#32a86f"),
+                                           Pathogen = c("Saline"= "#a88995",
+                                                        "PR8" = "#ffa600",
+                                                        "Sp3" = "#90B494",
+                                                        "Sp19F"=  "#8e32a8",
+                                                        "Klebsiella" = "#4b5d67",
+                                                        "E.coli" = "#32a852",
+                                                        "SARS-CoV-2 MA30 "="#bf3952",
+                                                        "SARS-CoV-2 MA10" = "#fc0390"),
+                                           `Pathogen type`  = c("Bacteria" = "#324aa8",
+                                                        "Virus" = "#724a98",
+                                                        "None" = "#e8ffff"),
+                                           Sex = c("M" = "#329ca8",
+                                                   "F" = "#afbf9f")),
+                                 annotation_legend_param = list(
+                                         "Cluster labels" = list(labels_gp = gpar(fontsize = 14),
+                                                                 legend_gp = gpar(fontsize = 14,fontface = "bold"),
+                                                                 direction = "vertical", title_gp = gpar(fontsize = 18)),
+                                        `Pathogen type` = list(labels_gp = gpar(fontsize = 14),
+                                                             legend_gp = gpar(fontsize = 40), 
+                                                             title_gp = gpar(fontsize = 18)),
+                                        Pathogen = list(labels_gp = gpar(fontsize = 14),
+                                                             legend_gp = gpar(fontsize = 40), 
+                                                             title_gp = gpar(fontsize = 18)),
+                                        Sex = list(labels_gp = gpar(fontsize =14),
+                                                   legend_gp = gpar(fontsize = 40),
+                                                   title_gp = gpar(fontsize = 18)),
+                                         Age = list(labels_gp = gpar(fontsize = 14),legend_gp = gpar(fontsize = 40), 
+                                                    title_gp = gpar(fontsize = 18))))
+
+
+
+heatmap<-ComplexHeatmap::Heatmap(t(mouse_HE_scaled2),
+                                 show_column_names = FALSE,
+                                 col =  colorRamp2( c(0,0.25, 0.5,0.75, 1), c("#F9EDEC","#F0D2D0","#E2A5A1", "#9f3172","#71134a")),
+                                 column_title ="Samples", row_title = "Histopathology Features", 
+                                 cluster_rows = ho_col,cluster_columns = mouse_cc_eu_scaled[[6]]$consensusTree,
+                                 top_annotation = tt, column_split = 6, 
+                                 heatmap_legend_param = list(title = "Scaled histopathology\nscore\n",
+                                                             labels_gp = gpar(fontsize = 14),legends_gp = gpar(fontsize = 14),
+                                                             title_gp = gpar(fontsize = 18), direction = "vertical", nrow = 1),
+                                 column_dend_height = unit(5, "cm"),
+                                 row_names_gp = gpar(fontsize = 18),column_names_gp = gpar(fontsize = 18),
+                                 row_title_gp = gpar(fontsize = 22),column_title_gp = gpar(fontsize = 22))
+
+
+tiff("figures/Mouse/Mouse_Heatmap_HE_clusters_complex2.tiff",width = 20,height = 12,pointsize = 15)
+ComplexHeatmap::draw(heatmap, merge_legend = TRUE)
+dev.off()
+
+pdf("figures/Mouse/Mouse_Heatmap_HE_clusters_complex.pdf",width = 24,height = 12,pointsize = 22)
+ComplexHeatmap::draw(heatmap, merge_legend = TRUE)
+dev.off()
+```
+
+
+```{r}
+mouse_by_cluster<-mouse_labs2 %>% 
+  ggplot(aes(`Cluster labels`,fill = Pathogen)) +
+   geom_bar(position = "fill") +
+  scale_fill_manual(values = c("Saline"= "#a88995",
+                               "PR8" = "#ffa600",
+                                                        "Sp3" = "#90B494",
+                                                        "Sp19F"=  "#8e32a8",
+                                                        "Klebsiella" = "#4b5d67",
+                                                        "E.coli" = "#32a852",
+                                                        "SARS-CoV-2 MA30 "="#bf3952",
+                                                        "SARS-CoV-2 MA10" = "#fc0390")) +
+  xlab("Clusters") +
+  ylab("Percentage of samples per pathogen group") +
+   scale_y_continuous(labels = scales::percent) +
+  labs(fill = "Pathogen")+
+  theme(axis.text.x = element_text(angle = 45, hjust = 0.9, vjust = 1, size = 28,face = "bold"),strip.text = element_text(size = 16,face = "bold")) +
+  theme(axis.text.y = element_text(size = 35,face = "bold"), axis.title.x.bottom = element_text(size = 35,face = "bold"), axis.title.y.left = element_text(size = 35,face = "bold"), legend.text = element_text(size =35,face = "bold"),legend.title = element_text(size =35,face = "bold"))+
+  ggstyle()
+
+ggsave(mouse_by_cluster,filename ="figures/Supplemental_figures/mouse_type_by_clusters.pdf",width = 12,height =12,dpi = 300) 
+
+ggsave(mouse_by_cluster,filename ="figures/Supplemental_figures/mouse_type_by_clusters.tiff",width = 12,height =12,dpi = 300) 
+```
+
+
+# Fishers test to compare pathogens groups within each cluster
+
+```{r}
+fishers_mouse_path<-data.frame()
+
+for (j in unique(mouse_labs2$Pathogen)){
+for (i in c("A","B","C","D","E","F")){
+mouse_labs2 %>%
+  mutate("new_clust_for_fish" = ifelse(`Cluster labels` == i,i,"All_other_clusters")) %>%
+  mutate(new_pathogen_for_fish = ifelse(Pathogen == j,j,paste0("No_",j))) %>%
+  group_by(new_clust_for_fish,new_pathogen_for_fish) %>%
+  count() %>%
+  spread(new_clust_for_fish,n,fill =0) %>%
+  column_to_rownames("new_pathogen_for_fish") %>%
+  fisher_test(detailed = TRUE) %>%
+  mutate(comparison = paste0(i,"_vs_all_other_clusters"), Pathogen = j) -> fish_mouse_path_res
+  fishers_mouse_path<- rbind(fishers_mouse_path,fish_mouse_path_res)
+}
+
+}
+write.csv(fishers_mouse_path,"figures/Supplemental_data/fishers_test_comparing_pathogen_proportions_across_clusters.csv")
+
+```
+
+
+# Mouse model 
+
+# Comparing all young pathogens to young saline
+
+
+```{r}
+mouse_cleaned_dataset3 %>%
+  inner_join(mouse_labels %>% select(X,new_labs,"Pathogen" = pathogen,Age), by = "X") %>%
+  filter(Age == "young") %>% 
+  select(-Age,-new_labs) %>%
+  mutate(Pathogen = str_replace_all(Pathogen," ","")) %>%
+  mutate(Pathogen = ifelse(str_starts(Pathogen," "),str_remove(Pathogen," "),Pathogen)) %>%
+  mutate(Pathogen = ifelse(Pathogen == "saline","Saline",Pathogen)) %>%
+  rename("CaseID" = "X") %>%
+  gather("feature","score",-CaseID,-Pathogen) %>%
+  transform(Pathogen = as.factor(Pathogen)) -> mcd
+
+wilcox_res<-data.frame(matrix(ncol = 8,nrow = 0))
+colnames(wilcox_res)<-c("data","formula","feature","group1","group2","p.val","p.adj.signif","y.position")
+for (i in unique(mcd$feature)){
+  
+  # create a df to store all the comparions for the feature i
+  dataf_per_feature<-data.frame(matrix(ncol = 6, nrow = 0))
+  colnames(dataf_per_feature)<-c("data","formula","feature","group1","group2","p.val")
+  
+  for (j in unique(mcd$Pathogen)){
+  if (j == "Saline"){
+  }
+  else{
+  mcd %>%
+      filter(feature == i) %>%
+      filter(Pathogen %in% c("Saline",j)) %>%
+      select(-feature,-CaseID)-> tt
+    
+  test_data<- wilcox.test(formula = score ~Pathogen,data = tt, detailed = TRUE,exact = FALSE)
+  dataf_per_feature<-rbind(dataf_per_feature, data.frame(data = test_data$data, formula = "score~Pathogen", feature = i, 
+                                                         group1 = "Saline",
+                                                         group2 = j,p.val = test_data$p.value))
+  }
+  }
+  
+  
+  dataf_per_feature$p.adj.signif<-p.adjust(dataf_per_feature$p.val,method = "bonferroni")
+  dataf_per_feature$y.position<-seq( from = 3.1, to = 3.8,length = nrow(dataf_per_feature))
+  wilcox_res<-rbind(wilcox_res,dataf_per_feature)
+
+}
+
+write.csv(wilcox_res,"figures/Supplemental_data/mouse_saline_vs_pathogen_across_all_features_young_wilcox_test_results.csv")
+
+wilcox_res %>%
+  filter(p.adj.signif < 0.05) %>%
+  add_significance(p.col = "p.adj.signif") -> wilcox_res_filtered
+
+# Create outliers
+mcd %>%
+   group_by(feature, Pathogen) %>%
+   mutate(outlier = ifelse(score > (quantile(score, .75) + 1.50*IQR(score)) & Pathogen == "Saline","#8D89A6",NA)) %>%
+   mutate(outlier = ifelse(score > (quantile(score, .75) + 1.50*IQR(score)) & Pathogen == "PR8","#5D737E",outlier)) %>%
+  mutate(outlier = ifelse(score > (quantile(score, .75) + 1.50*IQR(score)) &  Pathogen == "Sp3","#DBB4AD",outlier)) %>%
+   mutate(outlier = ifelse(score > (quantile(score, .75) + 1.50*IQR(score)) & Pathogen == "Sp19F","#502F4C",outlier)) %>%
+  mutate(outlier = ifelse(score > (quantile(score, .75) + 1.50*IQR(score)) & Pathogen == "E.coli","#D81B60",outlier)) %>%
+  mutate(outlier = ifelse(score > (quantile(score, .75) + 1.50*IQR(score)) & Pathogen == "Klebsiella","#55505C",outlier)) %>%
+  mutate(outlier = ifelse(score > (quantile(score, .75) + 1.50*IQR(score)) & Pathogen == "SARS-CoV-2MA30","#90B494",outlier)) %>%
+  mutate(outlier = ifelse(score > (quantile(score, .75) + 1.50*IQR(score)) & Pathogen == "SARS-CoV-2MA10","#7D4600",outlier)) %>%
+   mutate(outlier = ifelse(score > (quantile(score, .25) + 1.50*IQR(score)) & Pathogen == "Saline","#8D89A6",outlier)) %>%
+   mutate(outlier = ifelse(score > (quantile(score, .25) + 1.50*IQR(score)) & Pathogen == "PR8","#5D737E",outlier)) %>%
+  mutate(outlier = ifelse(score > (quantile(score, .25) + 1.50*IQR(score)) &  Pathogen == "Sp3","#DBB4AD",outlier)) %>%
+   mutate(outlier = ifelse(score > (quantile(score, .25) + 1.50*IQR(score)) & Pathogen == "Sp19F","#502F4C",outlier)) %>%
+  mutate(outlier = ifelse(score > (quantile(score, .25) + 1.50*IQR(score)) & Pathogen == "E.coli","#D81B60",outlier)) %>%
+  mutate(outlier = ifelse(score > (quantile(score, .25) + 1.50*IQR(score)) & Pathogen == "Klebsiella","#55505C",outlier)) %>%
+  mutate(outlier = ifelse(score > (quantile(score, .25) + 1.50*IQR(score)) & Pathogen == "SARS-CoV-2MA30","#90B494",outlier)) %>%
+  mutate(outlier = ifelse(score > (quantile(score, .25) + 1.50*IQR(score)) & Pathogen == "SARS-CoV-2MA10","#7D4600",outlier)) %>%
+   mutate(feature = str_replace_all(feature," ","\n")) %>%
+   transform(Pathogen = as.factor(Pathogen))-> data_for_plot_mcd
+
+data_for_plot_mcd %>%
+transform(Pathogen = factor(Pathogen, levels = c("Saline", "Sp3","Sp19F","E.coli","Klebsiella","PR8","SARS-CoV-2MA30","SARS-CoV-2MA10"))) %>%
+ggplot(aes(Pathogen, score)) +
+      geom_violin(width = 1, fill = "white") +
+      geom_boxplot(alpha = 2, outlier.shape = NA, width= 0.3, aes(fill = Pathogen)) +
+      facet_wrap(~feature, nrow = 2)+
+      scale_fill_manual(values =  c("#5D737E","#DBB4AD","#D81B60","#55505C","#8D89A6","#7D4600","#90B494","#502F4C"))+
+      theme(axis.text.x = element_text(angle = 45, hjust = 1, vjust = 1, size = 20),strip.text = element_text(size = 13)) +
+      theme(axis.text.y = element_text(size = 20), axis.title.x.bottom = element_text(size = 20), axis.title.y.left = element_text(size = 20))+ 
+      ylim(0,4)+
+      xlab("Mouse models (young)")+
+      ylab("Score")+
+      geom_bracket(aes(xmin = group1,xmax =group2, label = p.adj.signif.signif,y.position = y.position),data = wilcox_res_filtered, step.group.by = "feature",step.increase = 0.01,vjust = 0.1)+
+      ggstyle() -> p
+  ggsave(p, filename = "figures/Supplemental_figures/mouse_features_by_pathogen_group_young_boxplots.pdf", width = 24, height = 12)
+```
+
+
+# Comparing all pathogen models to saline old
+
+```{r}
+mouse_cleaned_dataset3 %>%
+  inner_join(mouse_labels %>% select(X,new_labs,"Pathogen" = pathogen,Age), by = "X") %>%
+  filter(Age == "old") %>% 
+  select(-Age,-new_labs) %>%
+  mutate(Pathogen = str_replace_all(Pathogen," ","")) %>%
+  mutate(Pathogen = ifelse(str_starts(Pathogen," "),str_remove(Pathogen," "),Pathogen)) %>%
+  mutate(Pathogen = ifelse(Pathogen == "saline","Saline",Pathogen)) %>%
+  rename("CaseID" = "X") %>%
+   gather("feature","score",-CaseID,-Pathogen) %>%
+     transform(Pathogen = as.factor(Pathogen)) -> mcd
+
+wilcox_res<-data.frame(matrix(ncol = 8,nrow = 0))
+colnames(wilcox_res)<-c("data","formula","feature","group1","group2","p.val","p.adj.signif","y.position")
+for (i in unique(mcd$feature)){
+  
+  # create a df to store all the comparions for the feature i
+  dataf_per_feature<-data.frame(matrix(ncol = 6, nrow = 0))
+  colnames(dataf_per_feature)<-c("data","formula","feature","group1","group2","p.val")
+  
+  for (j in unique(mcd$Pathogen)){
+  if (j == "Saline"){
+  }
+  else{
+  mcd %>%
+      filter(feature == i) %>%
+      filter(Pathogen %in% c("Saline",j)) %>%
+      select(-feature,-CaseID)-> tt
+    
+  test_data<- wilcox.test(formula = score ~Pathogen,data = tt, detailed = TRUE,exact = FALSE)
+  dataf_per_feature<-rbind(dataf_per_feature, data.frame(data = test_data$data, formula = "score~Pathogen", feature = i, 
+                                                         group1 = "Saline",
+                                                         group2 = j,p.val = test_data$p.value))
+  }
+  }
+  
+  
+  dataf_per_feature$p.adj.signif<-p.adjust(dataf_per_feature$p.val,method = "bonferroni")
+  dataf_per_feature$y.position<-seq( from = 3.1, to = 3.8,length = nrow(dataf_per_feature))
+  wilcox_res<-rbind(wilcox_res,dataf_per_feature)
+
+}
+
+write.csv(wilcox_res,"figures/Supplemental_data/mouse_saline_vs_pathogen_across_all_features_old_wilcox_test_results.csv")
+
+wilcox_res %>%
+  filter(p.adj.signif < 0.05) %>%
+  add_significance(p.col = "p.adj.signif") -> wilcox_res_filtered
+
+# Create outliers
+mcd %>%
+   group_by(feature, Pathogen) %>%
+   mutate(outlier = ifelse(score > (quantile(score, .75) + 1.50*IQR(score)) & Pathogen == "Saline","#8D89A6",NA)) %>%
+   mutate(outlier = ifelse(score > (quantile(score, .75) + 1.50*IQR(score)) & Pathogen == "PR8","#5D737E",outlier)) %>%
+  mutate(outlier = ifelse(score > (quantile(score, .75) + 1.50*IQR(score)) &  Pathogen == "Sp3","#DBB4AD",outlier)) %>%
+   mutate(outlier = ifelse(score > (quantile(score, .25) + 1.50*IQR(score)) & Pathogen == "Saline","#8D89A6",outlier)) %>%
+   mutate(outlier = ifelse(score > (quantile(score, .25) + 1.50*IQR(score)) & Pathogen == "PR8","#5D737E",outlier)) %>%
+  mutate(outlier = ifelse(score > (quantile(score, .25) + 1.50*IQR(score)) &  Pathogen == "Sp3","#DBB4AD",outlier)) %>%
+   mutate(feature = str_replace_all(feature," ","\n")) %>%
+   transform(Pathogen = as.factor(Pathogen))-> data_for_plot_mcd
+
+data_for_plot_mcd %>%
+transform(Pathogen = factor(Pathogen, levels = c("Saline", "Sp3","PR8"))) %>%
+ggplot(aes(Pathogen, score)) +
+      geom_violin(width = 1, fill = "white") +
+      geom_boxplot(alpha = 2, outlier.shape = NA, width= 0.3, aes(fill = Pathogen)) +
+      facet_wrap(~feature,nrow =2)+
+      scale_fill_manual(values =  c("#5D737E","#DBB4AD","#D81B60"))+
+      theme(axis.text.x = element_text(angle = 45, hjust = 1, vjust = 1, size = 20),strip.text = element_text(size = 13)) +
+      theme(axis.text.y = element_text(size = 20), axis.title.x.bottom = element_text(size = 20), axis.title.y.left = element_text(size = 20))+ 
+      xlab("Clusters") +
+      ylim(0,4)+
+      xlab("Mouse models (aged)")+
+      ylab("Score")+
+      geom_bracket(aes(xmin = group1,xmax =group2, label = p.adj.signif.signif,y.position = y.position),data = wilcox_res_filtered, step.group.by = "feature",step.increase = 0.01,vjust = 0.1)+
+      ggstyle() -> p
+  ggsave(p, filename = "figures/Supplemental_figures/mouse_features_by_pathogen_group_old_boxplots.pdf", width = 20, height = 6)
+```
+
+
+
+# Comparing features across mouse models
+
+```{r}
+y_axis_order<-c("Bacteria","Necrosis","PMN","Edema","Alveolar fibrin","Alveolar Hemorrhage","Vasculitis","Fibrosis","Hyaline membranes","AT2 hyperplasia","Lympho","Multinucleated")
+
+library(RColorBrewer)
+pm<-mouse_HE_scaled %>%
+  rownames_to_column("X") %>%
+  transform(X = as.numeric(X)) %>%
+  inner_join(mouse_labels %>% dplyr::select(X,pathogen,Age) , by = c("X")) %>% 
+  mutate(Age = ifelse(Age == "old","aged",Age)) %>% 
+  mutate(pathogen = ifelse(str_detect(pathogen,"saline"),str_to_title(pathogen),pathogen)) %>% 
+  mutate(pathogen = trimws(pathogen,"right")) %>%
+  mutate(Mouse_model = paste0(pathogen," ",Age)) %>%
+  transform(Mouse_model = as.factor(Mouse_model)) %>% 
+  rename("Vasculitis" = "vasculitis") %>%
+  gather("feature","value",-pathogen,-X,-Mouse_model,-Age) %>%
+  group_by(feature,Mouse_model) %>%
+  mutate(feature = str_replace_all(feature, "\\."," ")) %>%
+  mutate(mean = mean(value)) %>%
+  mutate(count_per_grp = n()) %>% 
+  mutate(Mouse_model = trimws(Mouse_model)) %>% 
+  mutate(perct_samples_greater_than_zero = sum(value>0)/count_per_grp * 100) %>% 
+  ungroup() %>% 
+  ggplot(aes(x = factor(feature, levels = rev(y_axis_order)),
+             y= factor(Mouse_model,levels = c("Saline young","Saline aged","Sp3 young","Sp3 aged","Sp19F young","E.coli young","Klebsiella young","PR8 young","PR8 aged","SARS-CoV-2 MA30 young","SARS-CoV-2 MA10 young")),size = mean, color = perct_samples_greater_than_zero)) +
+  geom_point(alpha=0.4) +
+  scale_size(range = c(.4, 20),name = "Average score per sample type\n") +
+  scale_color_distiller(palette = "RdPu", name = paste("Percentage of samples", "\n" ,"with scores > 0\n"),trans = "reverse") +
+  theme_classic()+ 
+  coord_flip() +
+  ylab("Mouse models")+
+  xlab("Histopathology features")+
+  ggstyle()+
+  theme(axis.text.x = element_text(angle = 45,vjust = 1,hjust = 1, size =30),axis.title = element_text(size = 30,face ="bold"),legend.title = element_text(size =30,face = "bold"), axis.text = element_text(size =30)) 
+
+ggsave(pm,filename ="figures/Mouse/Mouse_models_HE_feature_comparison.pdf" , width = 25, height =13,units="in", dpi=300)
+ggsave(pm,filename ="figures/Mouse/Mouse_models_HE_feature_comparison.tiff" , width = 25, height =13,units="in", dpi=300)
+```
+
+# Comparison of HE features between Mouse and human 
+
+
+```{r, warning=FALSE}
+mouse_cleaned_dataset3 %>%
+  transform(X = as.numeric (X)) %>%
+  inner_join(mouse_labels %>% select(X,pathogen), by = c("X")) %>%
+  filter(pathogen != "saline") %>% 
+  mutate(organism = "Mouse") %>%
+  column_to_rownames("X") %>%
+  select(-vasculitis, -pathogen) ->m1
+
+
+colnames(m1)<- colnames(m1) %>% str_replace_all("\\.","\n")
+cc<-colnames(m1)
+
+HE_scores %>%
+  rownames_to_column("CaseID") %>%
+  inner_join(labels %>% select(old_id, sample_type), by =c("CaseID" = "old_id")) %>%
+  filter(sample_type != "Control") %>%
+  mutate(vasculitis = "") %>%  #making a dummy vasculitis column so that I can filter columns needed
+  column_to_rownames("CaseID") %>%
+  mutate(organism = "Human") %>%
+  select(cc)  -> m2
+
+#mutate(outlier.high = V8 > quantile(V8, .75) + 1.50*IQR(V8),
+ #        outlier.low = V8 < quantile(V8, .25) - 1.50*IQR(V8))
+
+rbind(m1,m2) %>% rownames_to_column("CaseID") -> data_for_stats
+
+dunn_results<-get_stats(data_for_stats,
+                         folder_name = "figures/Mouse/",
+                        "organism",type = "categorical") %>% rstatix::add_y_position(step.increase = 0.1)
+
+data_for_stats %>%
+  gather("feature","score",-organism,-CaseID) %>%
+  group_by(feature,organism) %>%
+  mutate(outlier = ifelse(score > (quantile(score, .75) + 1.50*IQR(score)) & organism == "Mouse","#b35806",NA)) %>%
+  mutate(outlier = ifelse(score > (quantile(score, .75) + 1.50*IQR(score)) & organism == "Human","#3B5FAD",outlier)) %>%
+  mutate(outlier = ifelse(score < (quantile(score, .25) - 1.50*IQR(score)) & organism == "Mouse","#b35806",outlier)) %>%
+  mutate(outlier = ifelse(score < (quantile(score, .25) - 1.50*IQR(score)) & organism == "Human", "#3B5FAD",outlier)) -> data_for_plot
+
+make_boxplots_dotplots(data_for_plot,plot_type = "bv",varb_name = "organism", 
+                       folder_name = "figures/Mouse/",
+                       stats = dunn_results,bx_color = c("#b35806","#3B5FAD"), width = 10,height = 10,dtype = "HE", xlab = "Organism",organism = "mouse",nrow = 3)
+
+```
+
+# Clustering mouse and humans
+
+# Clustering averaged samples
+
+```{r}
+mouse_HE_scaled %>%
+  rownames_to_column("X") %>% 
+  transform(X = as.numeric (X)) %>%
+  inner_join(mouse_labels %>% select(X,pathogen), by = c("X")) %>%
+#  filter(pathogen != "saline") %>% 
+  mutate(organism = "mouse") %>%
+  column_to_rownames("X") %>%
+  select(-vasculitis, -pathogen) ->m1
+
+
+colnames(m1)<- colnames(m1) %>% str_replace_all("\\.","\n")
+cc<-colnames(m1)
+
+HE_scaled_data %>%
+  rownames_to_column("CaseID") %>%
+  inner_join(labels %>% select(old_id, sample_type), by =c("CaseID" = "old_id")) %>%
+#  filter(sample_type != "Control") %>%
+  mutate(vasculitis = "") %>%  #making a dummy vasculitis column so that I can filter columns needed
+  column_to_rownames("CaseID") %>%
+  mutate(organism = "human") %>%
+  select(cc)  -> m2
+
+
+m1 %>%
+  rownames_to_column("X") %>%
+  transform(X = as.numeric(X)) %>%
+  inner_join(mouse_labels %>% dplyr::select(X,new_labs), by = c("X")) %>%
+  gather(feature,value, -new_labs, -X, -organism) %>%
+  group_by(feature,new_labs) %>%
+  summarize(mean = mean(value)) %>% 
+  spread(feature,mean) %>%
+  mutate(type = "mouse") -> mouse_avg_HE
+
+
+m2 %>%
+  rownames_to_column("CaseID") %>%
+  inner_join(labels %>% dplyr::select(old_id,new_labs), by =c("CaseID" = "old_id")) %>%
+  gather(feature,value, -new_labs,-CaseID,-organism) %>%
+  transform(new_labs = as.factor(new_labs)) %>%
+  group_by(feature,new_labs) %>%
+  summarize(mean = mean(value)) %>% 
+  mutate(type = "human") %>%
+  spread(feature,mean) -> human_avg_HE
+
+colnames(mouse_avg_HE)<- colnames(mouse_avg_HE) %>% str_replace_all("\\.","\n")
+
+rbind(mouse_avg_HE,human_avg_HE) -> combined_avg
+
+combined_avg %>%
+  mutate(rowp = paste0(new_labs," ",type)) %>%
+  select(-new_labs,-type) %>%
+  column_to_rownames("rowp") -> combined_avg2
+  
+write.csv(combined_avg2,"/restricted/projectnb/montilab-p/projects/pneumonia/results/Testing/new_combined_avg_mouse_and_human.csv")
+```
+
+
+```{r}
+mcb<-ComplexHeatmap::Heatmap(t(combined_avg2),
+                                 show_column_names = TRUE,
+                                # col =  colorRamp2( c(0, 0.25,0.5, 1), c("blue", "#e0d1c5","#e0c78d", "red")),
+                               col =  colorRamp2( c(0,0.25, 0.5,0.75, 1), c("#F9EDEC","#F0D2D0","#E2A5A1", "#9f3172","#71134a")),
+                                 column_title ="Samples", row_title = "Histopathology Features", 
+                                # column_split = 5, 
+                                 column_names_gp = gpar(fontsize = 20),
+                                 column_title_gp = gpar(fontsize = 35),
+                                 row_title_gp = gpar(fontsize = 35),
+                                 column_dend_height = unit(4, "cm"),row_dend_width = unit(4,"cm"),
+                                 rect_gp = gpar(col = "grey", lwd = 1),
+                                 heatmap_legend_param = list(title = "Scaled histopathology score",
+                                                             labels_gp = gpar(fontsize = 20),legends_gp = gpar(fontsize = 20),
+                                                             title_gp = gpar(fontsize = 20), direction = "vertical", nrow = 1),
+                                 row_names_gp = gpar(fontsize = 20))
+
+
+pdf("figures/Mouse/Mouse_Human_average_clustering.pdf",width = 15,height = 10,pointsize = 20)
+ComplexHeatmap::draw(mcb, merge_legend = TRUE)
+dev.off()
+
+
+tiff("figures/Mouse/Mouse_Human_average_clustering.tiff",width = 15,height = 10,pointsize = 20)
+ComplexHeatmap::draw(mcb, merge_legend = TRUE)
+dev.off()
+
+```
+
+
+
+
+# Supplementary figures
+
+# Evaluation of clustering with metrics
+
+```{r}
+set.seed(1584903)
+eu_dist<-dist(HE_scaled_data,method = "euclidean")
+df_clus<-data.frame(matrix(nrow = 15,ncol =10))
+colnames(df_clus)<-c("k","n","avg.silwidth","ch","within.cluster.ss","dunn","dunn2","wb.ratio","sindex","entropy")
+for (i in 2:15){
+cs<-cluster.stats(eu_dist, CC_euc_scaled[[i]]$consensusClass)
+df<-data.frame(value = unlist(cs), k = i) %>% rownames_to_column("metrics") %>% tidyr::spread(key = metrics, value = value) %>% dplyr::select(k,n,avg.silwidth,ch,within.cluster.ss,dunn,dunn2,wb.ratio,sindex,entropy)
+df_clus<-rbind(df_clus,df)
+}
+
+df_clus %>%
+  filter(!is.na(k)) -> df_clus2
+
+plots<-list()
+for (i in 3:10){
+  name_for_plot<-names(df_clus2[i])
+    p<-ggplot(df_clus2, aes(k,.data[[name_for_plot]],color = .data[[name_for_plot]])) +
+    geom_point(size = 3) +
+    ylab(name_for_plot)+
+    theme_bw() +
+    colorspace::scale_color_continuous_sequential(palette="Hawaii", begin=0.4, end=1) + 
+    ggstyle()
+    plots[[name_for_plot]]<-p
+    
+  #  ggsave(p,filename = paste0("figures/cluster_meterics","_",i,".pdf"))
+#plot(df_clus2$k,df_clus2[[i]], ylab = name_for_plot)
+}
+
+pp<-gridExtra::grid.arrange(grobs = plots, nrow = 2)
+
+ggsave(pp,filename = paste0("figures/Clustering/cluster_metrics_all.pdf"), width = 30, height = 12)
+
+```
+
+
+# ICL 
+
+```{r}
+icl$clusterConsensus %>%
+  as.data.frame() %>%
+  group_by(k) %>% 
+  summarize(mean(clusterConsensus)) 
+
+icl$clusterConsensus
+icl[["itemConsensus"]] %>%
+  as.data.frame() %>%
+  filter(k == 7) -> item_cc
+
+data.frame(CC_euc_scaled[[7]]$consensusClass) %>%
+  rownames_to_column("CaseID") %>%
+  dplyr::rename("clust_labs" = "CC_euc_scaled..7...consensusClass") ->clust_labs
+
+item_cc %>%
+  separate(item, into = c("item","extra"),sep = " ") %>%
+  inner_join(labels, by = c("cluster" = "clust_labs","item" = "CaseID")) -> item_cc_final
+
+
+write.xlsx(item_cc_final,"figures/Clustering/item_consensus_final.xlsx")
+```
+
+
+##### Supplemental
+
+
+## Smoking status
+
+```{r}
+Processed_HE %>%
+  filter(smoking_status != "not_recorded") %>%
+  dplyr::select(-Gender,-Age,-expired_age,-Race,-smoking_history,-Alcohol_history, -Alcohol_status,-old_id,-Primary.diagnosis,-X,-clust_labs,-sample_type, -new_labs,-Bacteria_present) -> sm1
+
+# stats
+dunn_for_figure_sm1<-get_stats(sm1,
+                               folder_name = "figures/Supplemental_figures/statistical_test_results/",
+                               "smoking_status",type = "categorical") %>% rstatix::add_y_position(step.increase = 0.1)
+
+# Create outliers
+sm1 %>%
+   gather("feature","score",-smoking_status,-CaseID) %>% 
+   group_by(feature, smoking_status) %>% 
+   mutate(outlier_score = quantile(score, .75) + 1.50*IQR(score)) %>% 
+   mutate(outlier = ifelse(score > (quantile(score, .75) + 1.50*IQR(score)) & smoking_status == "Smoker","#f03b20",NA)) %>% 
+   mutate(outlier = ifelse(score > (quantile(score, .75) + 1.50*IQR(score)) & smoking_status == "Non-smoker","#207686",outlier)) %>%
+   mutate(outlier = ifelse(score < (quantile(score, .25) - 1.50*IQR(score)) & smoking_status == "Smoker","#f03b20",outlier)) %>%
+   mutate(outlier = ifelse(score < (quantile(score, .25) - 1.50*IQR(score)) & smoking_status == "Non-smoker","#207686",outlier)) %>% 
+   mutate(feature = str_replace_all(feature," ","\n")) %>%
+   transform(smoking_status = as.factor(smoking_status))-> data_for_plot_sm1
+
+make_boxplots_dotplots(data_for_plot_sm1,plot_type = "bv",varb_name = "smoking_status", 
+                       folder_name = "figures/Supplemental_figures/",
+                       stats = dunn_for_figure_sm1,bx_color = c("#f03b20","#207686"), width = 20,height = 7,xlab = "Smoking Status",dtype = "HE",organism = "human",nrow = 2)
+
+cp<-Processed_HE %>%
+  filter(smoking_status != "not_recorded") %>%
+  group_by(new_labs,smoking_status) %>% dplyr::count() %>%
+  ggplot(aes(new_labs,n,fill = smoking_status)) +
+  geom_bar(stat = "identity", position = "fill") +
+  scale_fill_brewer(name = "Smoking Status", palette = 3) +
+  theme_classic()+
+  ylab("Count") +
+  xlab("Cluster labels") +
+  ggstyle() +
+  theme(axis.text.x = element_text(size = 40), axis.text.y = element_text(size = 40), axis.title.x =element_text(size = 40),axis.title.y = element_text(size = 40),legend.text = element_text(size=40),legend.title = element_text(size=40)) 
+
+ggsave(cp,filename = paste0("figures/Supplemental_figures/smoking_status_per_cluster.pdf"), width = 30, height = 12)
+ggsave(cp,filename = paste0("figures/Supplemental_figures/smoking_status_per_cluster.tiff"), width = 30, height = 12)
+
+```
+
+
+## Alcohol status
+
+```{r}
+Processed_HE %>%
+  filter(Alcohol_status != "not_recorded") %>%
+  mutate(Alcohol_status = str_to_title(Alcohol_status)) %>% 
+  dplyr::select(-Gender,-Age,-expired_age,-Race,-smoking_history,-Alcohol_history, -smoking_status,-old_id,-Primary.diagnosis,-X,-clust_labs,-sample_type, -new_labs,-Bacteria_present) -> as1
+
+# stats
+dunn_for_figure_as1<-get_stats(as1,"Alcohol_status",folder_name = "figures/Supplemental_figures/statistical_test_results/",type = "categorical")
+
+# Create outliers
+as1 %>%
+   gather("feature","score",-Alcohol_status,-CaseID) %>% 
+   group_by(feature, Alcohol_status) %>% 
+   mutate(outlier_score = quantile(score, .75) + 1.50*IQR(score)) %>% 
+   mutate(outlier = ifelse(score > (quantile(score, .75) + 1.50*IQR(score)) & Alcohol_status == "drinker","#f03b20",NA)) %>% 
+   mutate(outlier = ifelse(score > (quantile(score, .75) + 1.50*IQR(score)) & Alcohol_status == "Non-drinker","#207686",outlier)) %>%
+   mutate(outlier = ifelse(score < (quantile(score, .25) - 1.50*IQR(score)) & Alcohol_status == "Drinker","#f03b20",outlier)) %>%
+   mutate(outlier = ifelse(score < (quantile(score, .25) - 1.50*IQR(score)) & Alcohol_status == "Non-drinker","#207686",outlier)) %>% 
+   mutate(feature = str_replace_all(feature," ","\n")) %>%
+   transform(Alcohol_status = as.factor(Alcohol_status))-> data_for_plot_as1
+
+make_boxplots_dotplots(data_for_plot_as1,plot_type = "bv",varb_name = "Alcohol_status",
+                       folder_name = "figures/Supplemental_figures/",stats = dunn_for_figure_as1,bx_color = c("#f03b20","#207686"), width = 20,height = 7,xlab = "Alcohol Status",dtype = "HE",organism = "human",nrow = 2)
+
+ap<-Processed_HE %>%
+  filter(Alcohol_status != "not_recorded") %>%
+  mutate(Alcohol_status = str_to_title(Alcohol_status)) %>% 
+  group_by(new_labs,Alcohol_status) %>% dplyr::count() %>%
+  ggplot(aes(new_labs,n,fill = Alcohol_status)) +
+  geom_bar(stat = "identity", position = "fill") +
+  scale_fill_brewer(name = "Alcohol Status", palette = 2) +
+  theme_classic()+
+  ylab("Count") +
+  xlab("Cluster labels") +
+  ggstyle() +
+  theme(axis.text.x = element_text(size = 40), axis.text.y = element_text(size = 40), axis.title.x =element_text(size = 40),axis.title.y = element_text(size = 40),legend.text = element_text(size=40),legend.title = element_text(size=40)) 
+
+ggsave(ap,filename = paste0("figures/Supplemental_figures/alcohol_status_per_cluster.pdf"), width = 30, height = 12)
+ggsave(ap,filename = paste0("figures/Supplemental_figures/alcohol_status_per_cluster.tiff"), width = 30, height = 12)
+
+```
+
+
+## Age
+
+```{r}
+Processed_HE %>%  
+  filter(!is.na(Age)) %>% 
+  mutate(Age_binarized = ifelse(Age >= 70 ,"Age 70-103","Age 43-75")) %>% group_by(Age_binarized) %>% 
+  dplyr::select(-Gender,-expired_age,-Race,-smoking_history,-Alcohol_history,-Alcohol_status,-Age, -smoking_status,-old_id,-Primary.diagnosis,-X,-clust_labs,-sample_type, -new_labs,-Bacteria_present) -> ag
+
+# stats
+dunn_for_figure_ag<-get_stats(ag,"Age_binarized",folder_name = "figures/Supplemental_figures/statistical_test_results/",type = "categorical")
+
+# Create outliers
+ag %>%
+   gather("feature","score",-Age_binarized,-CaseID) %>% 
+   group_by(feature, Age_binarized) %>% 
+   mutate(outlier_score = quantile(score, .75) + 1.50*IQR(score)) %>% 
+   mutate(outlier = ifelse(score > (quantile(score, .75) + 1.50*IQR(score)) & Age_binarized == "Age 70-103","#f03b20",NA)) %>% 
+   mutate(outlier = ifelse(score > (quantile(score, .75) + 1.50*IQR(score)) & Age_binarized == "Age 43-69","#207686",outlier)) %>%
+   mutate(outlier = ifelse(score < (quantile(score, .25) - 1.50*IQR(score)) & Age_binarized == "Age 70-103","#f03b20",outlier)) %>%
+   mutate(outlier = ifelse(score < (quantile(score, .25) - 1.50*IQR(score)) & Age_binarized == "Age 43-69","#207686",outlier)) %>% 
+   mutate(feature = str_replace_all(feature," ","\n")) %>%
+   transform(Age_binarized = as.factor(Age_binarized))-> data_for_plot_ag
+
+make_boxplots_dotplots(data_for_plot_ag,plot_type = "bv",varb_name = "Age_binarized",
+                       folder_name = "figures/Supplemental_figures/",stats = dunn_for_figure_ag,bx_color = c("#f03b20","#207686"), width = 20,height = 7,xlab = "Age",dtype = "HE",organism = "human",nrow = 2)
+
+
+age_clust<-Processed_HE %>%
+  mutate(Age_binarized = ifelse(Age >= 70 ,"Age 70-103","Age 43-69")) %>%
+  filter(!is.na(Age)) %>%
+  group_by(new_labs,Age_binarized) %>% dplyr::count() %>%
+  ggplot(aes(new_labs,n,fill = Age_binarized)) +
+  geom_bar(stat = "identity", position = "fill") +
+  scale_fill_brewer(name= "Age", palette = 12) +
+  theme_classic()+
+  ylab("Count") +
+  xlab("Cluster labels") +
+  ggstyle()+
+  theme(axis.text.x = element_text(size = 40), axis.text.y = element_text(size = 40), axis.title.x =element_text(size = 40),axis.title.y = element_text(size = 40),legend.text = element_text(size=40),legend.title = element_text(size=40)) 
+
+ggsave(age_clust,filename = paste0("figures/Supplemental_figures/age_per_cluster.pdf"), width = 30, height = 12)
+
+ggsave(age_clust,filename = paste0("figures/Supplemental_figures/age_per_cluster.tiff"), width = 30, height = 12)
+
+```
+
+# Age as a continuous varaible
+
+```{r}
+
+Processed_HE %>% 
+  filter(!is.na(Age)) %>%
+     gather("feature","score", -CaseID,-old_id, -Age, -expired_age, -Gender, -Race, -smoking_history,-Alcohol_history, -Alcohol_status, -new_labs,-clust_labs, -X,-sample_type, -Primary.diagnosis, -Bacteria_present, -smoking_status) %>%
+ mutate(Age_groups = case_when(#Age <= 60 ~ "60",
+                               Age <= 70 ~"<70",
+                               Age <= 80 & Age > 70 ~ "70-80",
+                               Age <= 90 & Age > 80 ~ "80-90",
+                               Age > 90 ~ "90-105")) %>%
+  ggplot(aes(Age_groups, score)) +
+  geom_boxplot() +
+  facet_wrap(~feature, nrow = 3) +
+  theme(axis.text.x = element_text(angle = 45, vjust = 0.5)) +
+  ggstyle() 
+
+
+Processed_HE %>% 
+  filter(!is.na(Age)) %>%
+     gather("feature","score", -CaseID,-old_id, -Age, -expired_age, -Gender, -Race, -smoking_history,-Alcohol_history, -Alcohol_status, -new_labs,-clust_labs, -X,-sample_type, -Primary.diagnosis, -Bacteria_present, -smoking_status) %>%
+ mutate(Age_groups = case_when(#Age <= 60 ~ "60",
+                               Age <= 70 ~"<70",
+                               Age <= 80 & Age > 70 ~ "70-80",
+                               Age <= 90 & Age > 80 ~ "80-90",
+                               Age > 90 ~ "90-105")) %>%
+  ggplot(aes(Age_groups, score)) +
+  geom_boxplot() +
+  ggbeeswarm::geom_beeswarm() +
+  scale_color_continuous() +
+  geom_jitter() +
+  facet_wrap(~feature, nrow = 3) +
+  theme(axis.text.x = element_text(angle = 45, vjust = 0.5)) +
+  ggstyle() 
+
+Processed_HE %>% 
+  gather("feature","score", -CaseID,-old_id, -Age, -expired_age, -Gender, -Race, -smoking_history,-Alcohol_history, -Alcohol_status, -new_labs,-clust_labs, -X,-sample_type, -Primary.diagnosis, -Bacteria_present, -smoking_status) %>%
+  filter(!is.na(Age)) %>%
+  ggplot(aes(Age, score)) +
+  geom_point() +
+  facet_wrap(~feature, nrow =3) +
+  ggstyle() 
+
+
+
+# Age based on clusters
+
+Processed_HE %>% 
+  filter(!is.na(Age)) %>%
+ mutate(Age_groups = case_when(Age <= 60 ~ "60",
+                               Age <= 70 & Age > 60 ~"60-70",
+                               Age <= 80 & Age > 70 ~ "70-80",
+                               Age <= 90 & Age > 80 ~ "80-90",
+                               Age > 90 ~ "90-105")) %>%
+  ggplot(aes(new_labs,Age, )) +
+  geom_boxplot() +
+  ggstyle()
+
+
+```
+
+
+
+
+
+
+## Sex
+
+```{r}
+Processed_HE %>%
+  filter(Gender != "not_recorded") %>%
+  mutate(Gender = str_to_title(Gender)) %>% 
+  dplyr::select(-Age,-expired_age,-Race,-smoking_history,-Alcohol_history,-Alcohol_status, -smoking_status,-old_id,-Primary.diagnosis,-X,-clust_labs,-sample_type, -new_labs,-Bacteria_present) -> sx1
+
+# stats
+dunn_for_figure_sx1<-get_stats(sx1,"Gender",folder_name = "figures/Supplemental_figures/statistical_test_results/",type = "categorical")
+
+# Create outliers
+sx1 %>%
+   gather("feature","score",-Gender,-CaseID) %>% 
+   group_by(feature, Gender) %>% 
+   mutate(outlier_score = quantile(score, .75) + 1.50*IQR(score)) %>% 
+   mutate(outlier = ifelse(score > (quantile(score, .75) + 1.50*IQR(score)) & Gender == "Male","#f03b20",NA)) %>% 
+   mutate(outlier = ifelse(score > (quantile(score, .75) + 1.50*IQR(score)) & Gender == "Female","#207686",outlier)) %>%
+   mutate(outlier = ifelse(score < (quantile(score, .25) - 1.50*IQR(score)) & Gender == "Male","#f03b20",outlier)) %>%
+   mutate(outlier = ifelse(score < (quantile(score, .25) - 1.50*IQR(score)) & Gender == "Female","#207686",outlier)) %>% 
+   mutate(feature = str_replace_all(feature," ","\n")) %>%
+   transform(Gender = as.factor(Gender))-> data_for_plot_sx1
+
+make_boxplots_dotplots(data_for_plot_sx1,plot_type = "bv",varb_name = "Gender", 
+                       folder_name = "figures/Supplemental_figures/",stats = dunn_for_figure_sx1,bx_color = c("#f03b20","#207686"), width = 20,height = 7,xlab = "sex",dtype = "HE",organism = "human",nrow = 2)
+
+
+sx_clust<-Processed_HE %>%
+  filter(Gender != "not_recorded") %>%
+  mutate(Gender = str_to_title(Gender)) %>% 
+  group_by(new_labs,Gender) %>% dplyr::count() %>%
+  ggplot(aes(new_labs,n,fill = Gender)) +
+  geom_bar(stat = "identity", position = "fill") +
+  scale_fill_brewer(name = "Sex", palette = 3) +
+  theme_classic()+
+  ylab("Count") +
+  xlab("Cluster labels") +
+  ggstyle() +
+  theme(axis.text.x = element_text(size = 40), axis.text.y = element_text(size = 40), axis.title.x =element_text(size = 40),axis.title.y = element_text(size = 40),legend.text = element_text(size=40),legend.title = element_text(size=40)) 
+
+ggsave(sx_clust,filename = paste0("figures/Supplemental_figures/Sex_per_cluster.pdf"), width = 30, height = 12)
+ggsave(sx_clust,filename = paste0("figures/Supplemental_figures/Sex_per_cluster.tiff"), width = 30, height = 12)
+
+
+
+
+
+```
+
+
+# Disease correlation
+
+```{r}
+
+metadata_clean_health %>% 
+  filter(approved_health_condition == "Pulmonary fibrosis") %>% 
+  unique() %>%
+  full_join(HE_scores_with_clust_labels_and_bac, by = c("CaseID")) %>%
+dplyr::select(-Age,-expired_age,-Race,-smoking_history,-Alcohol_history,-Alcohol_status, -smoking_status,-old_id,-Primary.diagnosis,-X,-clust_labs,-sample_type,-Bacteria_present,-donor_id,-new_type,-Gender) %>%
+   mutate(approved_health_condition = ifelse(is.na(approved_health_condition),"absent",approved_health_condition)) %>% 
+  mutate(new_labs = ifelse(approved_health_condition == "Pulmonary fibrosis", "Pulmonary fibrosis", new_labs)) %>% 
+  transform(new_labs = as.factor(new_labs)) %>%
+  dplyr::select(CaseID,Fibrosis,new_labs) -> mt
+
+
+# stats
+meta_stats<-get_stats(mt,"new_labs",
+                      folder_name = "figures/Supplemental_figures/statistical_test_results/Fibrosis",
+                      type = "categorical")
+
+
+pd1<-metadata_clean_health %>% 
+  filter(approved_health_condition == "Pulmonary fibrosis") %>% 
+  unique() %>%
+  full_join(HE_scores_with_clust_labels_and_bac, by = c("CaseID")) %>%
+  mutate(approved_health_condition = ifelse(is.na(approved_health_condition),"absent",approved_health_condition)) %>% 
+  mutate(new_labs = ifelse(approved_health_condition == "Pulmonary fibrosis", "Pulmonary fibrosis", new_labs)) %>% 
+  transform(new_labs = as.factor(new_labs)) %>%
+  ggplot(aes(new_labs,Fibrosis, fill = new_labs)) +
+  geom_violin(width = 1, fill = "white") +
+  geom_boxplot(alpha = 2, width= 0.3, aes(fill = new_labs)) +
+  scale_fill_manual(values= c('#b35806','#f1a340','#fee0b6','#d8daeb','#998ec3','#542788','#fc9272','#9ecae1'))+
+  ylab("Fibrosis HE score") +
+  theme(axis.text.x = element_text(angle =90, hjust = 1)) +
+  ggstyle()
+
+ggsave(pd1, filename = "figures/Supplemental_figures/FibrosisHE.pdf", width = 25, height =15, scale=0.8 )
+
+```
+
+# Mouse clustering metrics
+
+# Evaluation of clustering with metrics
+
+
+```{r}
+set.seed(1584903)
+eu_dist<-dist(mouse_HE_scaled,method = "euclidean",)
+df_clus<-data.frame(matrix(nrow = 15,ncol =9))
+colnames(df_clus)<-c("k","n","avg.silwidth","ch","within.cluster.ss","dunn","dunn2","wb.ratio","sindex")
+for (i in 2:15){
+cs<-cluster.stats(eu_dist, mouse_cc_eu_scaled[[i]]$consensusClass)
+df<-data.frame(value = unlist(cs), k = i) %>% rownames_to_column("metrics") %>% tidyr::spread(key = metrics, value = value) %>% dplyr::select(k,n,avg.silwidth,ch,within.cluster.ss,dunn,dunn2,wb.ratio,sindex)
+df_clus<-rbind(df_clus,df)
+}
+
+
+ggplot(df_clus2, aes(k,.data[[name_for_plot]],color = .data[[name_for_plot]])) +
+    geom_point(size = 3) +
+    ylab(name_for_plot)+
+    theme_bw() +
+    colorspace::scale_color_continuous_sequential(palette="Hawaii", begin=0.4, end=1) + 
+    ggstyle()
+
+df_clus %>%
+  filter(!is.na(k)) -> df_clus2
+plots<-list()
+for (i in 3:9){
+  name_for_plot<-names(df_clus2[i])
+    p<-ggplot(df_clus2, aes(k,.data[[name_for_plot]],color = .data[[name_for_plot]])) +
+    geom_point(size = 3) +
+    ylab(name_for_plot)+
+    theme_bw() +
+    colorspace::scale_color_continuous_sequential(palette="Hawaii", begin=0.4, end=1) + 
+    ggstyle()
+    plots[[name_for_plot]]<-p
+    ggsave(p,filename = paste0("/restricted/projectnb/montilab-p/projects/pneumonia/results/Manuscript/20240729/figures/Mouse/Mouse_cluster_meterics","_",i,".png"))
+plot(df_clus2$k,df_clus2[[i]], ylab = name_for_plot)
+}
+
+pp<-gridExtra::grid.arrange(grobs = plots, nrow = 2)
+
+ggsave(pp,filename = paste0("figures/Mouse/Mouse_cluster_metrics_all.pdf"), width = 30, height = 12)
+```
+#mclust
+
+#mclust
+
+```{r}
+# Tried to use devoff here but didn't work. 
+
+library(mclust)
+set.seed(450093)
+mcresults<-Mclust(mouse_HE_scaled, G = 1:15)
+plot(mcresults, what = "BIC")
+BIC_data<-mcresults$BIC
+pdf("figures/Mouse/mclust.pdf")
+plot(BIC_data)
+dev.off()
+write.csv(BIC_data,"figures/Mouse/mclust.csv")
+summary(mcresults)
+ggsave(p,filename = "figures/Clustering/Mouse/cluster_metrics_mclust.png")
+```
+
+
+
+
+```{r}
+sessionInfo() 
+writeLines(capture.output(sessionInfo()), "figures/Supplemental_data/sessionInfo.txt")
+```
+
+
+
+
+
+
+
+
+
+
+

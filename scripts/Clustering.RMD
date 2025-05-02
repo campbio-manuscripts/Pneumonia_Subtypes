@@ -1,0 +1,123 @@
+---
+title: "Untitled"
+author: "Amulya Shastry"
+date: "2025-04-25"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(ConsensusClusterPlus)
+library(tidyverse)
+library(dplyr)
+library(readxl)
+library(tidyverse)
+library(factoextra)
+library(umap)
+library(iheatmapr)
+library(qgraph)
+library(corpcor)
+library(glasso)
+library(BDgraph)
+library(umap)
+library(dendextend)
+library(cluster)
+library(ggplot2)
+library(bayesbio)
+library(ggpubr)
+library(rstatix)
+library(mclust)
+library(psych)
+library(scales)
+library(ggpubr)
+library(janitor)
+library(fpc)
+library(ppcor)
+library(circlize)
+library(ComplexHeatmap)
+library(gtsummary)
+```
+
+
+# Loading all data 
+
+```{r}
+#cleaned, filtered, averaged HE scores (not scaled)
+HE_scores<-read.csv("/restricted/projectnb/montilab-p/projects/pneumonia/results/Manuscript/20250426/data/cleaned_data_v6.3.csv")
+```
+
+
+
+# Clustering
+
+```{r}
+HE_scores %>% column_to_rownames("X") -> HE_scores2
+new_cleaned<-caret::preProcess(HE_scores2, method=c("range"))
+HE_scaled_data<-predict(new_cleaned, HE_scores2)
+
+CC_euc_scaled<-ConsensusClusterPlus(t(as.matrix(HE_scaled_data)),maxK=20,reps=1000,pItem=0.8,pFeature=1, title="/restricted/projectnb/montilab-p/projects/pneumonia/results/Manuscript/20250426/figures/Clustering/Euclidean_scaled",clusterAlg="pam",distance="euclidean",seed=14690,plot="png")
+
+saveRDS(CC_euc_scaled, "/restricted/projectnb/montilab-p/projects/pneumonia/results/Manuscript/20250426/figures/Clustering/Euclidean_scaled/CC_euc_scaled.RDS")
+write.csv(HE_scaled_data,"/restricted/projectnb/montilab-p/projects/pneumonia/results/Manuscript/20250426/data/Histopathology_cleaned_filtered_scaled_data.csv")
+
+data.frame(CC_euc_scaled[[7]]$consensusClass) %>%
+  rownames_to_column("CaseID") %>%
+  rename("clust_labs" = "CC_euc_scaled..7...consensusClass") %>%
+  write.csv("/restricted/projectnb/montilab-p/projects/pneumonia/results/Manuscript/20250426/data/cluster_labels_for_all_samples.csv")
+```
+
+
+# ICL 
+
+```{r}
+icl = calcICL(CC_euc_scaled,title="/restricted/projectnb/montilab-p/projects/pneumonia/results/Manuscript/20250426/figures/Clustering/Euclidean_scaled/ICL",plot="png")
+
+saveRDS(icl,"/restricted/projectnb/montilab-p/projects/pneumonia/results/Manuscript/20250426/figures/Clustering/Euclidean_scaled/ICL/icl.RDS")
+```
+
+
+
+# Load mouse datasets
+
+```{r}
+# Cleaned with all columns
+
+mouse_clean_all_cols<-read.csv("/restricted/projectnb/montilab-p/projects/pneumonia/results/Manuscript/20250426/data/mouse_HE_scores_cleaned_all_columns.csv")
+
+# Cleaned filtered 
+
+mouse_cleaned_dataset3<-read.csv("/restricted/projectnb/montilab-p/projects/pneumonia/results/Manuscript/20250426/data/mouse_HE_scores_cleaned_filtered.csv")
+```
+
+# Clustering
+
+```{r}
+mouse_cleaned_dataset3 %>% column_to_rownames("X") -> mouse_cleaned_dataset3
+new_cleaned<-caret::preProcess(mouse_cleaned_dataset3, method=c("range"))
+mouse_HE_scaled<-predict(new_cleaned, mouse_cleaned_dataset3)
+
+mouse_cc_eu_sclaed<-ConsensusClusterPlus(t(as.matrix(mouse_HE_scaled)),maxK=20,reps=1000,pItem=0.8,pFeature=1, title="/restricted/projectnb/montilab-p/projects/pneumonia/results/Manuscript/20250426/figures/Clustering/Mouse",clusterAlg="pam",distance="euclidean",seed=14690,plot="png")
+write.csv(mouse_HE_scaled,"/restricted/projectnb/montilab-p/projects/pneumonia/results/Manuscript/20250426/data/Mouse/mouse_HE_scores_cleaned__filtered_scaled.csv")
+saveRDS(mouse_cc_eu_sclaed, "/restricted/projectnb/montilab-p/projects/pneumonia/results/Manuscript/20250426/data/Mouse/mouse_cc_eu_scaled.RDS")
+```
+
+
+# ICL 
+
+```{r}
+icl = calcICL(mouse_cc_eu_sclaed,title="/restricted/projectnb/montilab-p/projects/pneumonia/results/Manuscript/20250426/figures/Clustering/Mouse/cluster_metrics/ICL/",plot="png")
+saveRDS(icl,"/restricted/projectnb/montilab-p/projects/pneumonia/results/Manuscript/20250426/figures/Clustering/Mouse/cluster_metrics/ICL/mouse_icl.RDS")
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
