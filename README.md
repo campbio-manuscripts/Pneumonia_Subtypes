@@ -27,9 +27,6 @@ R version - 4.2.1
 
 All the data required will be generated and stored under the data folder
 
-The scripts assume you have a directory structure like this 
-
-![](figures/Directory_struc.png)
     
 
 
