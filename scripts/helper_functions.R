@@ -107,7 +107,6 @@ get_stats<-function(dataset,testing_variable,type,folder_name){
     dataset %>%
       gather("feature","score",-one_of(testing_variable),-CaseID) %>%
       group_by(feature) %>% 
-    #  t_test(formula) %>%
       wilcox_test(formula, paired = FALSE) %>%
       adjust_pvalue(method = "bonferroni") %>%
       add_significance("p.adj") -> wilcox_test_results
