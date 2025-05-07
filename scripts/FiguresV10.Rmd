@@ -208,7 +208,7 @@ ggsave(feature_presence,filename ="figures/Control_vs_all_pneumonia/feaures_pres
 
 
 # Figure 2A
-# Pneumo vs SARS
+# Comparing all pneumonias to vs SARS-CoV2 pneumonias
 
 ```{r}
 label_order<-c("Abscess","Arterial\nthrombi","Bacteria","Alveolar\nHemorrhage","Edema","Necrosis","PMN","Lympho","AT2\nhyperplasia","Hyaline\nmembranes","Fibrosis")
@@ -274,11 +274,8 @@ make_boxplots_dotplots(data_for_plot_ss,plot_type = "bv",
 
 
 
-
-
-
 # Correlation across all HE features only for pneumonia samples (no scv2 & control)
-# I can directly use cor(df) but doing a loop to make insig values 0. 
+# I can directly use cor(df) but doing a loop to make insig values 0 for the figure. 
 
 ```{r}
 library(ggcorrplot)
@@ -336,7 +333,8 @@ fname2<-paste0("figures/Correlation/pneumonia_only_updated_HE_feature_correlatio
 ggsave(p2,filename = fname2, width = 30, height =30,units="in", dpi=300)
  print(p2) 
 ```
-# Bacterial_status
+
+# Comparing histopathology features across Bacterial present/absent in the lung
 
 
 ```{r}
@@ -397,7 +395,7 @@ make_boxplots_dotplots(data_for_plot_bb,stats = dunn_for_figure_bb,
 ```
 
 
-# Both SCV2 positive and Bacteria positive - 4 samples 
+# Checking how many samples have vibisble bacteria in the lung and a positive SARS-CoV2 test - 4 samples 
 
 
 ```{r}
@@ -407,12 +405,10 @@ Processed_HE %>%
 
 
 
-
-
 # Heatmap
 
 
-# Generate heatmap
+# Leaf reordering
 
 ```{r}
 # reorder leaves in hclust
@@ -438,7 +434,7 @@ ho_col <- hcopt(dist(t(HE_scaled_data2)),method="average") # for features
 ```
 
 
-# Heatmap
+# Generate Heatmap
 
 ```{r}
 library(circlize)
@@ -799,7 +795,7 @@ make_boxplots_dotplots(data_for_plot_mihc_new_type,
 
 
 # mIHC sample type - SARS-CoV2 vs Pneumonia
-# sample 13-82 has score of 0 for CD19 and is not displayed on this plot 
+
 ```{r}
 
 mihc_scores_with_clust_labels_and_bac %>% 
@@ -1630,6 +1626,8 @@ write.csv(combined_avg2,"/restricted/projectnb/montilab-p/projects/pneumonia/res
 ```
 
 
+# Heatmap of combined clustering
+
 ```{r}
 mcb<-ComplexHeatmap::Heatmap(t(combined_avg2),
                                  show_column_names = TRUE,
@@ -1931,10 +1929,6 @@ Processed_HE %>%
 ```
 
 
-
-
-
-
 ## Sex
 
 ```{r}
@@ -2069,9 +2063,9 @@ pp<-gridExtra::grid.arrange(grobs = plots, nrow = 2)
 
 ggsave(pp,filename = paste0("figures/Mouse/Mouse_cluster_metrics_all.pdf"), width = 30, height = 12)
 ```
-#mclust
 
 #mclust
+
 
 ```{r}
 # Tried to use devoff here but didn't work. 
@@ -2090,7 +2084,7 @@ ggsave(p,filename = "figures/Clustering/Mouse/cluster_metrics_mclust.png")
 ```
 
 
-
+# Record session info
 
 ```{r}
 sessionInfo() 
