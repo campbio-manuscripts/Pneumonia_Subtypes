@@ -112,7 +112,7 @@ icl<- readRDS("figures/Clustering/Euclidean_scaled/ICL/icl.RDS")
 
 
 # Figure 1A: Comparing control to all pneumonias across features
-# New type is the column name which indicates sample type (we already have sample type but we changes SARS-Cov2 to pneumonia as well in the new type and hence the new column)
+# New type is the column name which indicates sample type (we already have sample type but we change SARS-Cov2 to pneumonia in the new type and hence the new column)
 
 ```{r}
 # Preprocessing to add binarized bacteria scores. 
@@ -152,6 +152,7 @@ make_boxplots_dotplots(data_for_plot,plot_type = "bv",varb_name = "new_type",
 
 ```
 
+# Calculate mean score per histopathology feature per group
 
 ```{r}
 HE_scores_with_clust_labels_and_bac %>%
