@@ -1,7 +1,7 @@
 ---
 title: "Figure V11"
 author: "Amulya Shastry"
-date: "2025-04-26"
+date: "2025-11-18"
 output: html_document
 ---
 
@@ -38,35 +38,35 @@ library(circlize)
 library(ComplexHeatmap)
 library(gtsummary)
 library(xlsx)
-source("/restricted/projectnb/montilab-p/projects/pneumonia/results/Manuscript/20251027/scripts/helper_functions.R")
+source("helper_functions.R")
 library(rstatix)
 library(tidytext)
 library(DescTools)
 library(markdown)
-Sys.setenv(CHROMOTE_CHROME = "/restricted/projectnb/montilab-p/projects/pneumonia/results/Manuscript/20251027/scripts/Brave/brave")
+Sys.setenv(CHROMOTE_CHROME = "Brave/brave")
 ```
 
 # Loading all data 
 
 ```{r}
 #cleaned, filtered, averaged HE scores (not scaled)
-HE_scores<-read.csv("/restricted/projectnb/montilab-p/projects/pneumonia/results/Manuscript/20251027/data/cleaned_data_v6.3.csv") %>% column_to_rownames("X") 
+HE_scores<-read.csv("../data/cleaned_data_v6.3.csv") %>% column_to_rownames("X") 
 
 # Remove underscores from column names
 HE_scores<-clean_column_names(HE_scores,"human")
 
 # Min-max scaled data
-HE_scaled_data<-read.csv("/restricted/projectnb/montilab-p/projects/pneumonia/results/Manuscript/20240510/data/clean_data/Histopathology_cleaned_filtered_scaled_data.csv") %>% column_to_rownames("X")
+HE_scaled_data<-read.csv("../data/clean_data/Histopathology_cleaned_filtered_scaled_data.csv") %>% column_to_rownames("X")
 
 HE_scaled_data<-clean_column_names(HE_scaled_data,"human")
 
 # cleaned mihc data with mean scores
 
 # scaled data 
-mihc_scaled<-read.csv("/restricted/projectnb/montilab-p/projects/pneumonia/results/Manuscript/20251027/data/mihc_final_with_mean_scaled_11092023.csv")
+mihc_scaled<-read.csv("../data/mihc_final_with_mean_scaled_11092023.csv")
 
 # raw scores 
-mihc_scores<-read.csv("/restricted/projectnb/montilab-p/projects/pneumonia/results/Manuscript/20251027/data/mihc_final_with_mean_all_samples_11092023.csv")
+mihc_scores<-read.csv("../data/mihc_final_with_mean_all_samples_11092023.csv")
 
 # preprocess and change column names
 mihc_scores %>%
@@ -78,7 +78,7 @@ mihc_scores %>%
                 "CD68" = Opal.690.Area..μm...CD68) -> mihc_scores2
 
 # All labels 
-labels<-read.csv("/restricted/projectnb/montilab-p/projects/pneumonia/results/Manuscript/20251027/data/all_labels_cleaned") %>% mutate(sample_type = ifelse(sample_type == "SARS_CoV2_pneumonia","SCV2 Pneumonia",sample_type)) %>%
+labels<-read.csv("../data/all_labels_cleaned") %>% mutate(sample_type = ifelse(sample_type == "SARS_CoV2_pneumonia","SCV2 Pneumonia",sample_type)) %>%
 mutate(sample_type = ifelse(sample_type == "control","Control",sample_type))  
 
 
@@ -90,23 +90,23 @@ labels %>%
 
 
 # Info about health condition groups for analysis 
-disease_list<-read_excel("/restricted/projectnb/montilab-p/projects/pneumonia/results/Manuscript/20251027/data/Selected_disease_categories_for_investigation.xlsx", sheet = "approved health conditions")
+disease_list<-read_excel("../data/Selected_disease_categories_for_investigation.xlsx", sheet = "approved health conditions")
 
 
 # metadata
-metadata_clean_health<-readxl::read_excel("/restricted/projectnb/montilab-p/projects/pneumonia/results/Manuscript/20251027/data/Metadata_new_03172022.xlsx", sheet = "approved health conditions")
+metadata_clean_health<-readxl::read_excel("../data/Metadata_new_03172022.xlsx", sheet = "approved health conditions")
 
 
 # All other metadata -> Age, sex, smoking etc
-metadata_clean_part3<- readRDS("/restricted/projectnb/montilab-p/projects/pneumonia/results/Manuscript/20251027/data/cleaned_metadata_02192024.RDS") %>%
+metadata_clean_part3<- readRDS("../data/cleaned_metadata_02192024.RDS") %>%
   mutate_all(funs(str_replace(., "Not_recorded", "not_recorded"))) %>%
   mutate(Race = ifelse(Race == "","not_recorded",Race))
 
 
 # Load clustering data. Clustering can be run using the clustering.RMD script.
 
-CC_euc_scaled<-readRDS("/restricted/projectnb/montilab-p/projects/pneumonia/results/Manuscript/20251027/figures/Clustering/Euclidean_scaled/CC_euc_scaled.RDS")
-icl<- readRDS("/restricted/projectnb/montilab-p/projects/pneumonia/results/Manuscript/20251027/figures/Clustering/Euclidean_scaled/ICL/icl.RDS")
+CC_euc_scaled<-readRDS("../figures/Clustering/Euclidean_scaled/CC_euc_scaled.RDS")
+icl<- readRDS("../figures/Clustering/Euclidean_scaled/ICL/icl.RDS")
 ```
 
 
@@ -138,13 +138,13 @@ HE_scores %>%
 Processed_HE %>%
   mutate(new_type = ifelse(sample_type == "Control","Control","Pneumonia")) -> HE_scores_with_clust_labels_and_bac
 
-write.csv(HE_scores_with_clust_labels_and_bac,"/restricted/projectnb/montilab-p/projects/pneumonia/results/Manuscript/20251027/data/HE_raw_mean_scores_with_all_labels.csv")
+write.csv(HE_scores_with_clust_labels_and_bac,"../data/HE_raw_mean_scores_with_all_labels.csv")
 
 # Run KW and Dunn test
 HE_scores_with_clust_labels_and_bac %>%
   dplyr::select(-Gender,-Age,-expired_age,-Race,-smoking_history,-smoking_status,-Alcohol_history, -Alcohol_status,-old_id,-Primary.diagnosis,-X,-Bacteria_present,-clust_labs,-sample_type, -new_labs) ->t1
   
-dunn_for_figure<-get_stats(t1,"new_type",type = "categorical", folder_name = "/restricted/projectnb/montilab-p/projects/pneumonia/results/Manuscript/20251027/figures/Control_vs_all_pneumonia/statistical_test_results/") %>% rstatix::add_y_position(step.increase = 0.1)
+dunn_for_figure<-get_stats(t1,"new_type",type = "categorical", folder_name = "../figures/Control_vs_all_pneumonia/statistical_test_results/") %>% rstatix::add_y_position(step.increase = 0.1)
 
 # Create outliers points for ggplot
 t1 %>%
@@ -161,7 +161,7 @@ t1 %>%
 # Make boxplots and save the figure
 make_boxplots_dotplots(data_for_plot,plot_type = "bv",varb_name = "new_type", 
                        stats = dunn_for_figure,bx_color = c("#542788","#b35806"),
-                       folder_name = "/restricted/projectnb/montilab-p/projects/pneumonia/results/Manuscript/20251027/figures/Control_vs_all_pneumonia/",
+                       folder_name = "../figures/Control_vs_all_pneumonia/",
                        width = 16,height = 8,dtype = "HE", xlab = "Sample type",nrow = 2)
 
 ```
@@ -175,7 +175,7 @@ HE_scores_with_clust_labels_and_bac %>%
   gather("feature","score",-new_type,-CaseID) %>%
   group_by(new_type,feature) %>%
   summarise(mean = mean(score), sd = sd(score)) %>% 
-  write.csv("/restricted/projectnb/montilab-p/projects/pneumonia/results/Manuscript/20251027/figures/Supplemental_data/mean_feature_score_grouped_by_sample_type.csv")
+  write.csv("../figures/Supplemental_data/mean_feature_score_grouped_by_sample_type.csv")
 ```
 
 
@@ -215,9 +215,9 @@ feature_presence_data<-HE_scores_with_clust_labels_and_bac %>%
   theme(axis.text.x = element_text(angle = 45, hjust = 0.99, vjust = 1, size = 40,face = "bold")) +
   theme(axis.text.y = element_text(size = 40,face = "bold"), axis.title.x.bottom = element_text(size = 40,face = "bold"), axis.title.y.left = element_text(size = 40,face = "bold"), legend.position = "none", axis.ticks = element_line(color = "black"))
 
-ggsave(feature_presence,filename ="/restricted/projectnb/montilab-p/projects/pneumonia/results/Manuscript/20251027/figures/Control_vs_all_pneumonia/feaures_present_across_pneumonic_lungs.pdf",width = 18,height =16,dpi = 300) 
+ggsave(feature_presence,filename ="../figures/Control_vs_all_pneumonia/feaures_present_across_pneumonic_lungs.pdf",width = 18,height =16,dpi = 300) 
 
-ggsave(feature_presence,filename ="/restricted/projectnb/montilab-p/projects/pneumonia/results/Manuscript/20251027/figures/Control_vs_all_pneumonia/feaures_present_across_pneumonic_lungs.tiff",width = 18,height =16,dpi = 300) 
+ggsave(feature_presence,filename ="../figures/Control_vs_all_pneumonia/feaures_present_across_pneumonic_lungs.tiff",width = 18,height =16,dpi = 300) 
  
 ```
 
@@ -236,7 +236,7 @@ Processed_HE %>%
   dplyr::select(-Gender,-Age,-expired_age,-Race,-smoking_history,-smoking_status,-Alcohol_history, -Alcohol_status,-old_id,-Primary.diagnosis,-X,-Bacteria_present,-clust_labs,-sample_type, -new_labs) ->s1
 
 # Run dunn & KW 
-dunn_for_figure_s<-get_stats(s1,"scv2_status",folder_name = "/restricted/projectnb/montilab-p/projects/pneumonia/results/Manuscript/20251027/figures/Pneumo_vs_SARS/statistical_test_results/",type = "categorical") %>% rstatix::add_y_position(step.increase = 0.1) 
+dunn_for_figure_s<-get_stats(s1,"scv2_status",folder_name = "../figures/Pneumo_vs_SARS/statistical_test_results/",type = "categorical") %>% rstatix::add_y_position(step.increase = 0.1) 
 
 # Filter only the ones that we are showing on the figure and convert the feature to factor to ensure the plot is in the right order
 dunn_for_figure_s %>%
@@ -261,7 +261,7 @@ s1 %>%
 
 make_boxplots_dotplots(data_for_plot_s,plot_type = "bv",
                        varb_name = "scv2_status", stats = dunn_for_figure_s,
-                       folder_name = "/restricted/projectnb/montilab-p/projects/pneumonia/results/Manuscript/20251027/figures/Pneumo_vs_SARS/",
+                       folder_name = "../figures/Pneumo_vs_SARS/",
                        bx_color = c("#b35806","#5ab4ac"), width = 16,height = 4,xlab = "SARS-CoV-2 Positive", dtype = "HE",nrow = 1)
 ```
 
@@ -285,7 +285,7 @@ s1 %>%
 
 make_boxplots_dotplots(data_for_plot_ss,plot_type = "bv",
                        varb_name = "scv2_status", stats = dunn_for_figure_ss,
-                       folder_name = "/restricted/projectnb/montilab-p/projects/pneumonia/results/Manuscript/20251027/figures/Supplemental_figures/Figure2A_",
+                       folder_name = "../figures/Supplemental_figures/Figure2A_",
                        bx_color = c("#b35806","#5ab4ac"), width = 13,height = 4,xlab = "SARS-CoV-2 Positive", dtype = "HE",nrow = 1)
 ```
 
@@ -371,10 +371,10 @@ ggcorrplot(cor_df, type = "lower", lab = TRUE,tl.cex = 25,tl.srt = 25,lab_size =
   theme(legend.text = element_text(size= 25), axis.text.x = element_text(angle = 45,size = 40, face = "bold"),
         axis.text.y = element_text(size = 40, face = "bold"),
         legend.key.size = unit(1, 'cm'), axis.ticks = element_line(colour = "black"))-> p2
-fname<-paste0("/restricted/projectnb/montilab-p/projects/pneumonia/results/Manuscript/20251027/figures/Correlation/pneumonia_only_updated_HE_feature_correlation_adjusted.tiff")
+fname<-paste0("../figures/Correlation/pneumonia_only_updated_HE_feature_correlation_adjusted.tiff")
 ggsave(p2,filename = fname, width = 30, height =30,units="in", dpi=300)
 
-fname2<-paste0("/restricted/projectnb/montilab-p/projects/pneumonia/results/Manuscript/20251027/figures/Correlation/pneumonia_only_updated_HE_feature_correlation_adjusted.pdf")
+fname2<-paste0("../figures/Correlation/pneumonia_only_updated_HE_feature_correlation_adjusted.pdf")
 ggsave(p2,filename = fname2, width = 30, height =30,units="in", dpi=300)
 
 ```
@@ -388,7 +388,7 @@ Processed_HE %>%
 
 # stats
 dunn_for_figure_b<-get_stats(b1,"Bacteria_present",
-                             folder_name = "/restricted/projectnb/montilab-p/projects/pneumonia/results/Manuscript/20251027/figures/Bacterial_presence/statistical_test_results/",type = "categorical") %>% rstatix::add_y_position() %>%
+                             folder_name = "../figures/Bacterial_presence/statistical_test_results/",type = "categorical") %>% rstatix::add_y_position() %>%
   filter(feature %in% label_order) %>%
    transform(feature = factor(feature, levels = c("Abscess","Arterial\nthrombi","Bacteria","Alveolar\nHemorrhage","Edema","Necrosis","PMN","Lympho","AT2\nhyperplasia","Hyaline\nmembranes","Fibrosis")))
 
@@ -409,7 +409,7 @@ b1 %>%
    transform(feature = factor(feature, levels = c("Abscess","Arterial\nthrombi","Bacteria","Alveolar\nHemorrhage","Edema","Necrosis","PMN","Lympho","AT2\nhyperplasia","Hyaline\nmembranes","Fibrosis")))-> data_for_plot_b
 
 make_boxplots_dotplots(data_for_plot_b,
-                       folder_name = "/restricted/projectnb/montilab-p/projects/pneumonia/results/Manuscript/20251027/figures/Bacterial_presence/",plot_type = "bv",varb_name = "Bacteria_present", stats = dunn_for_figure_b,bx_color = c("#f03b20","#207686"), width = 16,height = 4,xlab = "Visible bacteria in the lung",dtyp = "HE")
+                       folder_name = "../figures/Bacterial_presence/",plot_type = "bv",varb_name = "Bacteria_present", stats = dunn_for_figure_b,bx_color = c("#f03b20","#207686"), width = 16,height = 4,xlab = "Visible bacteria in the lung",dtyp = "HE")
 ```
 
 
@@ -418,7 +418,7 @@ make_boxplots_dotplots(data_for_plot_b,
 ```{r}
 # dummy stats because none of these are significant
 dunn_for_figure_bb<-get_stats(b1,"Bacteria_present",
-                             folder_name = "/restricted/projectnb/montilab-p/projects/pneumonia/results/Manuscript/20251027/figures/Bacterial_presence/statistical_test_results/",type = "categorical") %>% rstatix::add_y_position() %>%
+                             folder_name = "../figures/Bacterial_presence/statistical_test_results/",type = "categorical") %>% rstatix::add_y_position() %>%
   filter(!feature %in% label_order)
 
 # Make plots 
@@ -437,7 +437,7 @@ b1 %>%
    filter(!feature %in% label_order) -> data_for_plot_bb
 
 make_boxplots_dotplots(data_for_plot_bb,stats = dunn_for_figure_bb,
-                       folder_name = "/restricted/projectnb/montilab-p/projects/pneumonia/results/Manuscript/20251027/figures/Supplemental_figures/Figure2B_",plot_type = "bv",varb_name = "Bacteria_present",bx_color = c("#f03b20","#207686"), width = 13,height = 4,xlab = "Visible bacteria in the lung",dtyp = "HE")
+                       folder_name = "../figures/Supplemental_figures/Figure2B_",plot_type = "bv",varb_name = "Bacteria_present",bx_color = c("#f03b20","#207686"), width = 13,height = 4,xlab = "Visible bacteria in the lung",dtyp = "HE")
 ```
 
 
@@ -540,11 +540,11 @@ heatmap<-ComplexHeatmap::Heatmap(t(HE_scaled_data2),show_column_names = FALSE,co
                                  column_title_gp = gpar(fontsize = 16,fontface = "bold"))
  
 
-tiff("/restricted/projectnb/montilab-p/projects/pneumonia/results/Manuscript/20251027/figures/Heatmaps/Human_Heatmap_HE_clusters_complexV2.tiff",width = 20,height = 18,pointsize = 20)
+tiff("../figures/Heatmaps/Human_Heatmap_HE_clusters_complexV2.tiff",width = 20,height = 18,pointsize = 20)
 draw(heatmap)
 dev.off()
 
-pdf("/restricted/projectnb/montilab-p/projects/pneumonia/results/Manuscript/20251027/figures/Heatmaps/Human_Heatmap_HE_clusters_complexV2.pdf",width = 22,height = 10,pointsize = 2)
+pdf("../figures/Heatmaps/Human_Heatmap_HE_clusters_complexV2.pdf",width = 22,height = 10,pointsize = 2)
 draw(heatmap)
 dev.off()
 
@@ -587,7 +587,7 @@ cl_pl<-full_labs2 %>%
   scale_fill_manual(values = c("#e87c1e","#bf3952"))+
   ggstyle()
 
-ggsave(cl_pl,filename = "/restricted/projectnb/montilab-p/projects/pneumonia/results/Manuscript/20251027/figures/Pneumo_vs_SARS/proportions_of_scv2_yes_no_across_clusters.pdf",width = 6,height = 4)
+ggsave(cl_pl,filename = "../figures/Pneumo_vs_SARS/proportions_of_scv2_yes_no_across_clusters.pdf",width = 6,height = 4)
 
 
 fishers_result_bl<-data.frame()
@@ -621,13 +621,13 @@ bl_pl<-HE_scores_with_clust_labels_and_bac %>%
   scale_fill_manual(values = c("#e87c1e","#5D737E"))+
   ggstyle() 
 
-ggsave(bl_pl,filename = "/restricted/projectnb/montilab-p/projects/pneumonia/results/Manuscript/20251027/figures/Bacterial_presence/proportions_of_bacteria_yes_no_across_clusters.pdf",width = 6,height = 4)
+ggsave(bl_pl,filename = "../figures/Bacterial_presence/proportions_of_bacteria_yes_no_across_clusters.pdf",width = 6,height = 4)
 
 #55505C
 
-write.csv(fishers_result_cl,"/restricted/projectnb/montilab-p/projects/pneumonia/results/Manuscript/20251027/figures/Supplemental_data/fishers_test_comparing_scv2_enrichment_across_all_clusters.csv")
+write.csv(fishers_result_cl,"../figures/Supplemental_data/fishers_test_comparing_scv2_enrichment_across_all_clusters.csv")
 
-write.csv(fishers_result_bl,"/restricted/projectnb/montilab-p/projects/pneumonia/results/Manuscript/20251027/figures/Supplemental_data/fishers_test_comparing_bacteria_enrichment_across_all_clusters.csv")
+write.csv(fishers_result_bl,"../figures/Supplemental_data/fishers_test_comparing_bacteria_enrichment_across_all_clusters.csv")
 
 ```
 
@@ -663,7 +663,7 @@ hist(treesize(randf_results),
 x<-varImpPlot(randf_results,
            main = "Top 10 - Variable Importance") +theme(legend.position="none")
 
-ggsave(x, filename = paste0("/restricted/projectnb/montilab-p/projects/pneumonia/results/Manuscript/20251027/figures/Variable_importance/VI_Top10.tiff" ), width = 30, height =7, scale=1,units="in", dpi=300)
+ggsave(x, filename = paste0("../figures/Variable_importance/VI_Top10.tiff" ), width = 30, height =7, scale=1,units="in", dpi=300)
 
 varb_imp<-importance(randf_results)
 
@@ -732,8 +732,8 @@ pp<-top_features %>%
     ylab("Variable Importance Score")+
     ggstyle()
 
-ggsave(pp, filename = paste0("/restricted/projectnb/montilab-p/projects/pneumonia/results/Manuscript/20251027/figures/Variable_importance/VIcluster_all.tiff" ), width = 16, height =6, scale=1,units="in", dpi=300)
-ggsave(pp, filename = paste0("/restricted/projectnb/montilab-p/projects/pneumonia/results/Manuscript/20251027/figures/Variable_importance/VIcluster_all.pdf" ), width = 16, height =6, scale=1,units="in", dpi=300)
+ggsave(pp, filename = paste0("../figures/Variable_importance/VIcluster_all.tiff" ), width = 16, height =6, scale=1,units="in", dpi=300)
+ggsave(pp, filename = paste0("../figures/Variable_importance/VIcluster_all.pdf" ), width = 16, height =6, scale=1,units="in", dpi=300)
 
 ```
 
@@ -745,12 +745,12 @@ mcresults<-Mclust(HE_scaled_data, G = 1:15)
 
 BIC_data<-mcresults$BIC
 options(bitmapType='cairo')
-tiff("/restricted/projectnb/montilab-p/projects/pneumonia/results/Manuscript/20251027/figures/Clustering/mclust.tiff")
+tiff("../figures/Clustering/mclust.tiff")
 plot(BIC_data)
 dev.off()
 # do this to convert it to dataframe. As.data.frame doesn't work because of mclustresult format. I tried multiple things and ultimately this worked. 
-write.csv(BIC_data,"/restricted/projectnb/montilab-p/projects/pneumonia/results/Manuscript/20251027/figures/Clustering/mclust.csv")
-mclust_results<-read.csv("/restricted/projectnb/montilab-p/projects/pneumonia/results/Manuscript/20251027/figures/Clustering/mclust.csv")
+write.csv(BIC_data,"../figures/Clustering/mclust.csv")
+mclust_results<-read.csv("../figures/Clustering/mclust.csv")
 summary(mcresults)
 ```
 
@@ -820,8 +820,8 @@ cor_df %>%
   ggcorrplot(lab = TRUE,tl.cex = 20,lab_size = 8) +
   ggstyle() ->p
 
-ggsave(p,filename = "/restricted/projectnb/montilab-p/projects/pneumonia/results/Manuscript/20251027/figures/Correlation/HE_vs_mIHC_corr_test_results_adjusted.tiff", width = 20, height = 20, scale=0.8,units="in", dpi=300)
-ggsave(p,filename = "/restricted/projectnb/montilab-p/projects/pneumonia/results/Manuscript/20251027/figures/Correlation/HE_vs_mIHC_corr_test_results_adjusted.pdf", width = 20, height = 20, scale=0.8,units="in", dpi=300)
+ggsave(p,filename = "../figures/Correlation/HE_vs_mIHC_corr_test_results_adjusted.tiff", width = 20, height = 20, scale=0.8,units="in", dpi=300)
+ggsave(p,filename = "../figures/Correlation/HE_vs_mIHC_corr_test_results_adjusted.pdf", width = 20, height = 20, scale=0.8,units="in", dpi=300)
 
 ```
 
@@ -836,7 +836,7 @@ mihc_scores2 %>%
   left_join(HE_scores_with_clust_labels_and_bac, by = c("slide_id"="CaseID")) %>%
   dplyr::select("CaseID" =slide_id, CD19, CD4, CD8, MPO, CD68, Bacteria_present, sample_type, Primary.diagnosis, clust_labs,new_labs,old_id, Age, expired_age, Gender, Race, smoking_history, smoking_status, Alcohol_history,Alcohol_status, new_type)->mihc_scores_with_clust_labels_and_bac
 
-write.csv(mihc_scores_with_clust_labels_and_bac,"/restricted/projectnb/montilab-p/projects/pneumonia/results/Manuscript/20251027/data/mIHC_scores_with_all_labels.csv")
+write.csv(mihc_scores_with_clust_labels_and_bac,"../data/mIHC_scores_with_all_labels.csv")
 
 mihc_scores_with_clust_labels_and_bac %>%
    dplyr::select(-Gender,-Age,-expired_age,-Race,-smoking_history,-smoking_status,-Alcohol_history, -Alcohol_status,-old_id,-Primary.diagnosis, -sample_type, -Bacteria_present, -clust_labs, -new_labs) -> mihc_for_new_type
@@ -844,7 +844,7 @@ mihc_scores_with_clust_labels_and_bac %>%
 
 # This is actually wilcox test change the code name
 t_test_for_figure<-get_stats(mihc_for_new_type,"new_type",
-                             folder_name = "/restricted/projectnb/montilab-p/projects/pneumonia/results/Manuscript/20251027/figures/mfIHC/statistical_test_results/",
+                             folder_name = "../figures/mfIHC/statistical_test_results/",
                              type = "continuous")  %>% rstatix::add_y_position(step.increase = 0.5)
 
 mihc_for_new_type %>%
@@ -861,7 +861,7 @@ mihc_for_new_type %>%
 make_boxplots_dotplots(data_for_plot_mihc_new_type,
                        stats = t_test_for_figure, 
                        plot_type = "bvm",varb_name = "new_type",
-                           folder_name = "/restricted/projectnb/montilab-p/projects/pneumonia/results/Manuscript/20251027/figures/mfIHC/",
+                           folder_name = "../figures/mfIHC/",
                        dtype = "mihc",width = 15,height = 5, xlab = "Sample types",
                        bx_color = c("#B77979","#5C9687"))  
 
@@ -878,7 +878,7 @@ mihc_scores_with_clust_labels_and_bac %>%
   dplyr::select(-Gender,-Age,-expired_age,-Race,-smoking_history,-smoking_status,-Alcohol_history, -Alcohol_status,-old_id,-Primary.diagnosis,-sample_type, -new_type, -Bacteria_present, -clust_labs, -new_labs) -> mihc_for_sc
 
 t_test_for_figure_sc<-get_stats(mihc_for_sc,"scv2_status",
-                                folder_name = "/restricted/projectnb/montilab-p/projects/pneumonia/results/Manuscript/20251027/figures/mfIHC/statistical_test_results/",
+                                folder_name = "../figures/mfIHC/statistical_test_results/",
                                 type = "continuous") %>% rstatix::add_y_position(step.increase = 0.5)
 
 mihc_for_sc %>%
@@ -896,7 +896,7 @@ mihc_for_sc %>%
 make_boxplots_dotplots(data_for_plot_mihc_s,
                        plot_type = "bvm",
                        varb_name = "scv2_status", 
-                       folder_name = "/restricted/projectnb/montilab-p/projects/pneumonia/results/Manuscript/20251027/figures/mfIHC/",
+                       folder_name = "../figures/mfIHC/",
                        stats = t_test_for_figure_sc,
                        bx_color  = c("#b35806","#5ab4ac"), width = 15,height = 4,xlab = "SARS-CoV2 Positive", dtype = "mIHC")
 
@@ -912,7 +912,7 @@ mihc_scores_with_clust_labels_and_bac %>%
   dplyr::select(-Gender,-Age,-expired_age,-Race,-smoking_history,-smoking_status,-Alcohol_history, -Alcohol_status,-old_id,-Primary.diagnosis,-sample_type, -new_type, -clust_labs, -new_labs) -> mihc_for_b
 
 t_test_for_figure_b<-get_stats(mihc_for_b,
-                               folder_name = "/restricted/projectnb/montilab-p/projects/pneumonia/results/Manuscript/20251027/figures/mfIHC/statistical_test_results/",
+                               folder_name = "../figures/mfIHC/statistical_test_results/",
                                "Bacteria_present",type = "continuous") %>% rstatix::add_y_position(step.increase = 0.5)
 
 mihc_for_b %>%
@@ -930,7 +930,7 @@ mihc_for_b %>%
 make_boxplots_dotplots(data_for_plot_mihc_b,
                        plot_type = "bvm",
                        varb_name = "Bacteria_present", 
-                       folder_name = "/restricted/projectnb/montilab-p/projects/pneumonia/results/Manuscript/20251027/figures/mfIHC/",
+                       folder_name = "../figures/mfIHC/",
                        stats = t_test_for_figure_b,
                        bx_color  = c("#f03b20","#207686"), width = 15,height = 4,xlab = "Visible bacteria in the lung", dtype = "mIHC")
 
@@ -953,7 +953,7 @@ mihc_for_clust %>%
       group_by(feature) %>% 
       wilcox_test(score ~ new_labs, paired = FALSE, ref.group = "I", p.adjust.method = "bonferroni") -> all_stats
 
-write.csv(all_stats,"/restricted/projectnb/montilab-p/projects/pneumonia/results/Manuscript/20251027/figures/mfIHC/statistical_test_results/all_clusters.csv")
+write.csv(all_stats,"../figures/mfIHC/statistical_test_results/all_clusters.csv")
 
 all_stats %>%
       filter(p.adj < 0.05) %>%
@@ -1008,8 +1008,8 @@ for (i in c("CD8","CD4","CD19","CD68","MPO")){
         theme(legend.position="none")+
         ylab(paste0("Fraction of cells"))
      
-    fname1<-paste0("/restricted/projectnb/montilab-p/projects/pneumonia/results/Manuscript/20251027/figures/mfIHC/","wilcoxon_test",i,"_new_labs_continuous_human", "_boxplots_plots.tiff")
-    fname2<-paste0("/restricted/projectnb/montilab-p/projects/pneumonia/results/Manuscript/20251027/figures/mfIHC/","wilcoxon_test",i,"_new_labs_continuous_human", "_boxplots_plots.pdf")
+    fname1<-paste0("../figures/mfIHC/","wilcoxon_test",i,"_new_labs_continuous_human", "_boxplots_plots.tiff")
+    fname2<-paste0("../figures/mfIHC/","wilcoxon_test",i,"_new_labs_continuous_human", "_boxplots_plots.pdf")
     ggsave(pl,filename = fname1, width = 8, height = 8, scale=1, unit= "in", dpi=300)
     ggsave(pl,filename = fname2, width = 8, height = 8, scale=1, unit= "in", dpi=300)
  
@@ -1032,8 +1032,8 @@ for (i in c("CD8","CD4","CD19","CD68","MPO")){
       ylab(paste0("Fraction of area occupied by positive signal (log scaled)"))
      
     
-      fname1<-paste0("/restricted/projectnb/montilab-p/projects/pneumonia/results/Manuscript/20251027/figures/mfIHC/","wilcoxon_test",i,"_logged_new_labs_continuous_human", "_boxplots_plots.tiff")
-      fname2<-paste0("/restricted/projectnb/montilab-p/projects/pneumonia/results/Manuscript/20251027/figures/mfIHC/","wilcoxon_test",i,"_logged_new_labs_continuous_human", "_boxplots_plots.pdf")
+      fname1<-paste0("../figures/mfIHC/","wilcoxon_test",i,"_logged_new_labs_continuous_human", "_boxplots_plots.tiff")
+      fname2<-paste0("../figures/mfIHC/","wilcoxon_test",i,"_logged_new_labs_continuous_human", "_boxplots_plots.pdf")
     ggsave(pl,filename = fname1, width = 8, height = 8, scale=1, unit= "in", dpi=300)
     ggsave(pl,filename = fname2, width = 8, height = 8, scale=1, unit= "in", dpi=300)
     
@@ -1093,11 +1093,11 @@ mfIHC_heatmap<-ComplexHeatmap::Heatmap(as.matrix(mihc_for_clust2_scaled), cell_f
 },col =  colorRamp2( c(0,0.2,0.5,0.8,1), c("#F9EDEC","#F0D2D0","#E2A5A1", "#9f3172","#71134a")),column_title ="Immune cell types", row_title = "Clusters", cluster_rows = FALSE,cluster_columns = FALSE, show_column_dend = FALSE, show_row_dend = FALSE, heatmap_legend_param = list(title = "Median fraction of\nimmune cells or \narea per cluster\n",labels_gp = gpar(fontsize = 25),legends_gp = gpar(fontsize = 25), title_gp = gpar(fontsize = 30),  direction = "vertical", nrow = 1), row_names_gp = gpar(fontsize = 30),row_title_gp = gpar(fontsize = 30),column_names_gp = gpar(fontsize = 30),
                         column_title_gp = gpar(fontsize = 30),row_names_side = "left")  
 
-tiff("/restricted/projectnb/montilab-p/projects/pneumonia/results/Manuscript/20251027/figures/mfIHC/Human_Heatmap_mfIHC_complexV2.tiff",width = 20,height = 20,pointsize = 20)
+tiff("../figures/mfIHC/Human_Heatmap_mfIHC_complexV2.tiff",width = 20,height = 20,pointsize = 20)
 draw(mfIHC_heatmap, merge_legend = TRUE)
 dev.off()
 
-pdf("/restricted/projectnb/montilab-p/projects/pneumonia/results/Manuscript/20251027/figures/mfIHC/Human_Heatmap_mfIHC_complexV2.pdf",width = 12,height =10,pointsize = 20)
+pdf("../figures/mfIHC/Human_Heatmap_mfIHC_complexV2.pdf",width = 12,height =10,pointsize = 20)
 draw(mfIHC_heatmap, merge_legend = TRUE)
 dev.off()
 
@@ -1132,8 +1132,8 @@ metadata_clean_part3 %>%
   gt::opt_stylize(style = 6, color = 'pink')  -> test
 
 #Sys.setenv(CHROMOTE_CHROME = "/restricted/projectnb/camplab/home/shastrya/R/x86_64-pc-linux-gnu-library/4.2/chromote")
-Sys.setenv(CHROMOTE_CHROME = "/restricted/projectnb/montilab-p/projects/pneumonia/results/Manuscript/20251027/scripts/Brave/brave")
-gt::gtsave(test,file = file.path("/restricted/projectnb/montilab-p/projects/pneumonia/results/Manuscript/20251027/figures/human_demographics.pdf"))
+Sys.setenv(CHROMOTE_CHROME = "../scripts/Brave/brave")
+gt::gtsave(test,file = file.path("../figures/human_demographics.pdf"))
 
 ```
 
@@ -1144,23 +1144,23 @@ gt::gtsave(test,file = file.path("/restricted/projectnb/montilab-p/projects/pneu
 ```{r}
 # Cleaned with all columns
 
-mouse_clean_all_cols<-read.csv("/restricted/projectnb/montilab-p/projects/pneumonia/results/Manuscript/20251027/data/mouse_HE_scores_cleaned_all_columns.csv")
+mouse_clean_all_cols<-read.csv("../data/mouse_HE_scores_cleaned_all_columns.csv")
 
 # Cleaned filtered 
 
-mouse_cleaned_dataset3<-read.csv("/restricted/projectnb/montilab-p/projects/pneumonia/results/Manuscript/20251027/data/mouse_HE_scores_cleaned_filtered.csv")
+mouse_cleaned_dataset3<-read.csv("../data/mouse_HE_scores_cleaned_filtered.csv")
 
 # Cleaned filtered, scaled to 0-1
 
 #mouse_HE_scaled<-read.csv("/restricted/projectnb/montilab-p/projects/pneumonia/results/Mouse/Mouse_HE/mouse_HE_scores_cleaned__filtered_scaled.csv") %>%
  # column_to_rownames("X")
 
-mouse_HE_scaled<-read.csv("/restricted/projectnb/montilab-p/projects/pneumonia/results/Manuscript/20251027/data/Mouse/mouse_HE_scores_cleaned__filtered_scaled.csv") %>%
+mouse_HE_scaled<-read.csv("../data/Mouse/mouse_HE_scores_cleaned__filtered_scaled.csv") %>%
   column_to_rownames("X")
 
 
 # labels
-mouse_labels<-read.csv("/restricted/projectnb/montilab-p/projects/pneumonia/results/Manuscript/20251027/data/mouse_metadata_labels") %>%
+mouse_labels<-read.csv("../data/mouse_metadata_labels") %>%
   mutate(pathogen = ifelse(pathogen == "SARS-CoV-2 MA10 BALB/C ","SARS-CoV-2 MA10", pathogen))
 
 # renaming previous before leaf reordering - c(2,5,4,6,1,3),new_labs = c("A","B","C","D","E","F")
@@ -1179,7 +1179,7 @@ mouse_cleaned_dataset3<-clean_column_names(mouse_cleaned_dataset3,"mouse")
 # Mouse clustering
 
 #mouse_cc_eu_scaled<-readRDS("/restricted/projectnb/montilab-p/projects/pneumonia/results/Mouse/Mouse_HE/mouse_cc_eu_scaled.RDS")
-mouse_cc_eu_scaled<-readRDS("/restricted/projectnb/montilab-p/projects/pneumonia/results/Manuscript/20251027/data/Mouse/mouse_cc_eu_scaled.RDS")
+mouse_cc_eu_scaled<-readRDS("../data/Mouse/mouse_cc_eu_scaled.RDS")
 
 ```
 
@@ -1192,7 +1192,7 @@ mouse_cc_eu_scaled<-readRDS("/restricted/projectnb/montilab-p/projects/pneumonia
 library(kableExtra)
 library(dplyr)
 
-mouse_models<-read_excel("/restricted/projectnb/montilab-p/projects/pneumonia/results/Manuscript/20251027/data/Excel of mouse model corrected final 12032024.xlsx") 
+mouse_models<-read_excel("../data/Excel of mouse model corrected final 12032024.xlsx") 
   
 #x<-colnames(mouse_models) %>% str_replace_all(" ","\n") 
 #colnames(mouse_models)<- c("Pneumonia","Microbe","Strain","Route","Dose","Mouse age \\n (weeks)","Mouse \\n strain") 
@@ -1213,7 +1213,7 @@ kableExtra::kable(mouse_models %>% select(-Pneumonia),escape = F) %>% kable_styl
   row_spec(1:2, bold = T, color = "black") %>% 
   row_spec(3:7, bold = T, color = "black") %>%
   row_spec(8:11, bold = T, color = "black") %>%
-  save_kable("/restricted/projectnb/montilab-p/projects/pneumonia/results/Manuscript/20251027/figures/Mouse/Mouse_models_table.pdf",density = 600)
+  save_kable("../figures/Mouse/Mouse_models_table.pdf",density = 600)
   
 ```
 
@@ -1306,11 +1306,11 @@ heatmap<-ComplexHeatmap::Heatmap(t(mouse_HE_scaled2),
                                  row_title_gp = gpar(fontsize = 22),column_title_gp = gpar(fontsize = 22))
 
 
-tiff("/restricted/projectnb/montilab-p/projects/pneumonia/results/Manuscript/20251027/figures/Mouse/Mouse_Heatmap_HE_clusters_complex2.tiff",width = 20,height = 12,pointsize = 15)
+tiff("../figures/Mouse/Mouse_Heatmap_HE_clusters_complex2.tiff",width = 20,height = 12,pointsize = 15)
 ComplexHeatmap::draw(heatmap, merge_legend = TRUE)
 dev.off()
 
-pdf("/restricted/projectnb/montilab-p/projects/pneumonia/results/Manuscript/20251027/figures/Mouse/Mouse_Heatmap_HE_clusters_complex.pdf",width = 24,height = 12,pointsize = 22)
+pdf("../figures/Mouse/Mouse_Heatmap_HE_clusters_complex.pdf",width = 24,height = 12,pointsize = 22)
 ComplexHeatmap::draw(heatmap, merge_legend = TRUE)
 dev.off()
 ```
@@ -1339,9 +1339,9 @@ mouse_by_cluster<-mouse_labs2 %>%
   theme(axis.text.x = element_text(angle = 45, hjust = 0.9, vjust = 1, size = 12,face = "bold"),strip.text = element_text(size = 12,face = "bold")) +
   theme(axis.text.y = element_text(size = 12,face = "bold"), axis.title.x.bottom = element_text(size = 14,face = "bold"), axis.title.y.left = element_text(size = 14,face = "bold"), legend.text = element_text(size =12,face = "bold"),legend.title = element_text(size =12,face = "bold"))
 
-ggsave(mouse_by_cluster,filename ="/restricted/projectnb/montilab-p/projects/pneumonia/results/Manuscript/20251027/figures/Mouse/mouse_type_by_clusters.pdf",width = 6,height =5,dpi = 300) 
+ggsave(mouse_by_cluster,filename ="../figures/Mouse/mouse_type_by_clusters.pdf",width = 6,height =5,dpi = 300) 
 
-ggsave(mouse_by_cluster,filename ="/restricted/projectnb/montilab-p/projects/pneumonia/results/Manuscript/20251027/figures/Mouse/mouse_type_by_clusters.tiff",width = 6,height =5,dpi = 300) 
+ggsave(mouse_by_cluster,filename ="../figures/Mouse/mouse_type_by_clusters.tiff",width = 6,height =5,dpi = 300) 
 ```
 
 
@@ -1369,7 +1369,7 @@ fishers_mouse_path %>%
   adjust_pvalue() %>%
   add_significance() -> fishers_mouse_path
 
-write.csv(fishers_mouse_path,"/restricted/projectnb/montilab-p/projects/pneumonia/results/Manuscript/20251027/figures/Supplemental_data/fishers_test_comparing_pathogen_proportions_across_clusters.csv")
+write.csv(fishers_mouse_path,"../figures/Supplemental_data/fishers_test_comparing_pathogen_proportions_across_clusters.csv")
 
 ```
 
@@ -1422,7 +1422,7 @@ for (i in unique(mcd$feature)){
 
 }
 
-write.csv(wilcox_res,"/restricted/projectnb/montilab-p/projects/pneumonia/results/Manuscript/20251027/figures/Supplemental_data/mouse_saline_vs_pathogen_across_all_features_young_wilcox_test_results.csv")
+write.csv(wilcox_res,"../figures/Supplemental_data/mouse_saline_vs_pathogen_across_all_features_young_wilcox_test_results.csv")
 
 wilcox_res %>%
   filter(p.adj.signif < 0.05) %>%
@@ -1464,7 +1464,7 @@ ggplot(aes(Pathogen, score)) +
       ylab("Score")+
       geom_bracket(aes(xmin = group1,xmax =group2, label = p.adj.signif.signif,y.position = y.position),data = wilcox_res_filtered, step.group.by = "feature",step.increase = 0.01,vjust = 0.1)+
       ggstyle() -> p
-  ggsave(p, filename = "/restricted/projectnb/montilab-p/projects/pneumonia/results/Manuscript/20251027/figures/Supplemental_figures/mouse_features_by_pathogen_group_young_boxplots.pdf", width = 24, height = 12)
+  ggsave(p, filename = "../figures/Supplemental_figures/mouse_features_by_pathogen_group_young_boxplots.pdf", width = 24, height = 12)
 ```
 
 
@@ -1513,7 +1513,7 @@ for (i in unique(mcd$feature)){
 
 }
 
-write.csv(wilcox_res,"/restricted/projectnb/montilab-p/projects/pneumonia/results/Manuscript/20251027/figures/Supplemental_data/mouse_saline_vs_pathogen_across_all_features_old_wilcox_test_results.csv")
+write.csv(wilcox_res,"../figures/Supplemental_data/mouse_saline_vs_pathogen_across_all_features_old_wilcox_test_results.csv")
 
 wilcox_res %>%
   filter(p.adj.signif < 0.05) %>%
@@ -1546,7 +1546,7 @@ ggplot(aes(Pathogen, score)) +
       ylab("Score")+
       geom_bracket(aes(xmin = group1,xmax =group2, label = p.adj.signif.signif,y.position = y.position),data = wilcox_res_filtered, step.group.by = "feature",step.increase = 0.01,vjust = 0.1)+
       ggstyle() -> p
-  ggsave(p, filename = "/restricted/projectnb/montilab-p/projects/pneumonia/results/Manuscript/20251027/figures/Supplemental_figures/mouse_features_by_pathogen_group_old_boxplots.pdf", width = 20, height = 6)
+  ggsave(p, filename = "../figures/Supplemental_figures/mouse_features_by_pathogen_group_old_boxplots.pdf", width = 20, height = 6)
 ```
 
 
@@ -1587,8 +1587,8 @@ pm<-mouse_HE_scaled %>%
   ggstyle()+
   theme(axis.text.x = element_text(angle = 45,vjust = 1,hjust = 1, size =30),axis.title = element_text(size = 30,face ="bold"),legend.title = element_text(size =30,face = "bold"), axis.text = element_text(size =30)) 
 
-ggsave(pm,filename ="/restricted/projectnb/montilab-p/projects/pneumonia/results/Manuscript/20251027/figures/Mouse/Mouse_models_HE_feature_comparison.pdf" , width = 25, height =13,units="in", dpi=300)
-ggsave(pm,filename ="/restricted/projectnb/montilab-p/projects/pneumonia/results/Manuscript/20251027/figures/Mouse/Mouse_models_HE_feature_comparison.tiff" , width = 25, height =13,units="in", dpi=300)
+ggsave(pm,filename ="../figures/Mouse/Mouse_models_HE_feature_comparison.pdf" , width = 25, height =13,units="in", dpi=300)
+ggsave(pm,filename ="../figures/Mouse/Mouse_models_HE_feature_comparison.tiff" , width = 25, height =13,units="in", dpi=300)
 ```
 
 # Comparison of HE features between Mouse and human 
@@ -1619,7 +1619,7 @@ HE_scores %>%
 rbind(m1,m2) %>% rownames_to_column("CaseID") -> data_for_stats
 
 dunn_results<-get_stats(data_for_stats,
-                         folder_name = "/restricted/projectnb/montilab-p/projects/pneumonia/results/Manuscript/20251027/figures/Mouse/",
+                         folder_name = "../figures/Mouse/",
                         "organism",type = "categorical") %>% rstatix::add_y_position(step.increase = 0.1)
 
 data_for_stats %>%
@@ -1631,7 +1631,7 @@ data_for_stats %>%
   mutate(outlier = ifelse(score < (quantile(score, .25) - 1.50*IQR(score)) & organism == "Human", "#3B5FAD",outlier)) -> data_for_plot
 
 make_boxplots_dotplots(data_for_plot,plot_type = "bv",varb_name = "organism", 
-                       folder_name = "/restricted/projectnb/montilab-p/projects/pneumonia/results/Manuscript/20251027/figures/Mouse/",
+                       folder_name = "../figures/Mouse/",
                        stats = dunn_results,bx_color = c("#b35806","#3B5FAD"), width = 10,height = 10,dtype = "HE", xlab = "Organism",organism = "mouse",nrow = 3)
 
 ```
@@ -1713,12 +1713,12 @@ mcb<-ComplexHeatmap::Heatmap(t(combined_avg2),
                                  row_names_gp = gpar(fontsize = 20))
 
 
-pdf("/restricted/projectnb/montilab-p/projects/pneumonia/results/Manuscript/20251027/figures/Mouse/Mouse_Human_average_clustering.pdf",width = 15,height = 10,pointsize = 20)
+pdf("../figures/Mouse/Mouse_Human_average_clustering.pdf",width = 15,height = 10,pointsize = 20)
 ComplexHeatmap::draw(mcb, merge_legend = TRUE)
 dev.off()
 
 
-tiff("/restricted/projectnb/montilab-p/projects/pneumonia/results/Manuscript/20251027/figures/Mouse/Mouse_Human_average_clustering.tiff",width = 15,height = 10,pointsize = 20)
+tiff("../figures/Mouse/Mouse_Human_average_clustering.tiff",width = 15,height = 10,pointsize = 20)
 ComplexHeatmap::draw(mcb, merge_legend = TRUE)
 dev.off()
 
@@ -1754,13 +1754,13 @@ for (i in 3:10){
     ggstyle()
     plots[[name_for_plot]]<-p
     
-  #  ggsave(p,filename = paste0("/restricted/projectnb/montilab-p/projects/pneumonia/results/Manuscript/20251027/figures/cluster_meterics","_",i,".pdf"))
+  #  ggsave(p,filename = paste0("../figures/cluster_meterics","_",i,".pdf"))
 #plot(df_clus2$k,df_clus2[[i]], ylab = name_for_plot)
 }
 
 pp<-gridExtra::grid.arrange(grobs = plots, nrow = 2)
 
-ggsave(pp,filename = paste0("/restricted/projectnb/montilab-p/projects/pneumonia/results/Manuscript/20251027/figures/Clustering/cluster_metrics_all.pdf"), width = 30, height = 12)
+ggsave(pp,filename = paste0("../figures/Clustering/cluster_metrics_all.pdf"), width = 30, height = 12)
 
 ```
 
@@ -1787,7 +1787,7 @@ item_cc %>%
   inner_join(labels, by = c("cluster" = "clust_labs","item" = "CaseID")) -> item_cc_final
 
 
-write.xlsx(item_cc_final,"/restricted/projectnb/montilab-p/projects/pneumonia/results/Manuscript/20251027/figures/Clustering/item_consensus_final.xlsx")
+write.xlsx(item_cc_final,"../figures/Clustering/item_consensus_final.xlsx")
 ```
 
 
@@ -1803,7 +1803,7 @@ Processed_HE %>%
 
 # stats
 dunn_for_figure_sm1<-get_stats(sm1,
-                               folder_name = "/restricted/projectnb/montilab-p/projects/pneumonia/results/Manuscript/20251027/figures/Supplemental_figures/statistical_test_results/",
+                               folder_name = "../figures/Supplemental_figures/statistical_test_results/",
                                "smoking_status",type = "categorical") %>% rstatix::add_y_position(step.increase = 0.1)
 
 # Create outliers
@@ -1819,7 +1819,7 @@ sm1 %>%
    transform(smoking_status = as.factor(smoking_status))-> data_for_plot_sm1
 
 make_boxplots_dotplots(data_for_plot_sm1,plot_type = "bv",varb_name = "smoking_status", 
-                       folder_name = "/restricted/projectnb/montilab-p/projects/pneumonia/results/Manuscript/20251027/figures/Supplemental_figures/",
+                       folder_name = "../figures/Supplemental_figures/",
                        stats = dunn_for_figure_sm1,bx_color = c("#f03b20","#207686"), width = 20,height = 7,xlab = "Smoking Status",dtype = "HE",organism = "human",nrow = 2)
 
 cp<-Processed_HE %>%
@@ -1834,8 +1834,8 @@ cp<-Processed_HE %>%
   ggstyle() +
   theme(axis.text.x = element_text(size = 40), axis.text.y = element_text(size = 40), axis.title.x =element_text(size = 40),axis.title.y = element_text(size = 40),legend.text = element_text(size=40),legend.title = element_text(size=40)) 
 
-ggsave(cp,filename = paste0("/restricted/projectnb/montilab-p/projects/pneumonia/results/Manuscript/20251027/figures/Supplemental_figures/smoking_status_per_cluster.pdf"), width = 30, height = 12)
-ggsave(cp,filename = paste0("/restricted/projectnb/montilab-p/projects/pneumonia/results/Manuscript/20251027/figures/Supplemental_figures/smoking_status_per_cluster.tiff"), width = 30, height = 12)
+ggsave(cp,filename = paste0("../figures/Supplemental_figures/smoking_status_per_cluster.pdf"), width = 30, height = 12)
+ggsave(cp,filename = paste0("../figures/Supplemental_figures/smoking_status_per_cluster.tiff"), width = 30, height = 12)
 
 ```
 
@@ -1864,7 +1864,7 @@ fishers_result_sk %>%
   adjust_pvalue() %>%
   add_significance() -> fishers_result_sk
 
-write.csv(fishers_result_sk,"/restricted/projectnb/montilab-p/projects/pneumonia/results/Manuscript/20251027/figures/Supplemental_data/fishers_test_comparing_smoking_status_across_all_clusters.csv")
+write.csv(fishers_result_sk,"../figures/Supplemental_data/fishers_test_comparing_smoking_status_across_all_clusters.csv")
 
 ```
 
@@ -1879,7 +1879,7 @@ Processed_HE %>%
   dplyr::select(-Gender,-Age,-expired_age,-Race,-smoking_history,-Alcohol_history, -smoking_status,-old_id,-Primary.diagnosis,-X,-clust_labs,-sample_type, -new_labs,-Bacteria_present) -> as1
 
 # stats
-dunn_for_figure_as1<-get_stats(as1,"Alcohol_status",folder_name = "/restricted/projectnb/montilab-p/projects/pneumonia/results/Manuscript/20251027/figures/Supplemental_figures/statistical_test_results/",type = "categorical")
+dunn_for_figure_as1<-get_stats(as1,"Alcohol_status",folder_name = "../figures/Supplemental_figures/statistical_test_results/",type = "categorical")
 
 # Create outliers
 as1 %>%
@@ -1894,7 +1894,7 @@ as1 %>%
    transform(Alcohol_status = as.factor(Alcohol_status))-> data_for_plot_as1
 
 make_boxplots_dotplots(data_for_plot_as1,plot_type = "bv",varb_name = "Alcohol_status",
-                       folder_name = "/restricted/projectnb/montilab-p/projects/pneumonia/results/Manuscript/20251027/figures/Supplemental_figures/",stats = dunn_for_figure_as1,bx_color = c("#f03b20","#207686"), width = 20,height = 7,xlab = "Alcohol Status",dtype = "HE",organism = "human",nrow = 2)
+                       folder_name = "../figures/Supplemental_figures/",stats = dunn_for_figure_as1,bx_color = c("#f03b20","#207686"), width = 20,height = 7,xlab = "Alcohol Status",dtype = "HE",organism = "human",nrow = 2)
 
 ap<-Processed_HE %>%
   filter(Alcohol_status != "not_recorded") %>%
@@ -1909,8 +1909,8 @@ ap<-Processed_HE %>%
   ggstyle() +
   theme(axis.text.x = element_text(size = 40), axis.text.y = element_text(size = 40), axis.title.x =element_text(size = 40),axis.title.y = element_text(size = 40),legend.text = element_text(size=40),legend.title = element_text(size=40)) 
 
-ggsave(ap,filename = paste0("/restricted/projectnb/montilab-p/projects/pneumonia/results/Manuscript/20251027/figures/Supplemental_figures/alcohol_status_per_cluster.pdf"), width = 30, height = 12)
-ggsave(ap,filename = paste0("/restricted/projectnb/montilab-p/projects/pneumonia/results/Manuscript/20251027/figures/Supplemental_figures/alcohol_status_per_cluster.tiff"), width = 30, height = 12)
+ggsave(ap,filename = paste0("../figures/Supplemental_figures/alcohol_status_per_cluster.pdf"), width = 30, height = 12)
+ggsave(ap,filename = paste0("../figures/Supplemental_figures/alcohol_status_per_cluster.tiff"), width = 30, height = 12)
 
 ```
 
@@ -1940,7 +1940,7 @@ fishers_result_as %>%
   adjust_pvalue(method = "bonferroni") %>%
   add_significance() -> fishers_result_as
 
-write.csv(fishers_result_as,"/restricted/projectnb/montilab-p/projects/pneumonia/results/Manuscript/20251027/figures/Supplemental_data/fishers_test_comparing_Alcohol_status_across_all_clusters.csv")
+write.csv(fishers_result_as,"../figures/Supplemental_data/fishers_test_comparing_Alcohol_status_across_all_clusters.csv")
 
 ```
 
@@ -1956,7 +1956,7 @@ Processed_HE %>%
   dplyr::select(-Gender,-expired_age,-Race,-smoking_history,-Alcohol_history,-Alcohol_status,-Age, -smoking_status,-old_id,-Primary.diagnosis,-X,-clust_labs,-sample_type, -new_labs,-Bacteria_present) -> ag
 
 # stats
-dunn_for_figure_ag<-get_stats(ag,"Age_binarized",folder_name = "/restricted/projectnb/montilab-p/projects/pneumonia/results/Manuscript/20251027/figures/Supplemental_figures/statistical_test_results/",type = "categorical")
+dunn_for_figure_ag<-get_stats(ag,"Age_binarized",folder_name = "../figures/Supplemental_figures/statistical_test_results/",type = "categorical")
 
 # Create outliers
 ag %>%
@@ -1971,7 +1971,7 @@ ag %>%
    transform(Age_binarized = as.factor(Age_binarized))-> data_for_plot_ag
 
 make_boxplots_dotplots(data_for_plot_ag,plot_type = "bv",varb_name = "Age_binarized",
-                       folder_name = "/restricted/projectnb/montilab-p/projects/pneumonia/results/Manuscript/20251027/figures/Supplemental_figures/",stats = dunn_for_figure_ag,bx_color = c("#f03b20","#207686"), width = 20,height = 7,xlab = "Age",dtype = "HE",organism = "human",nrow = 2)
+                       folder_name = "../figures/Supplemental_figures/",stats = dunn_for_figure_ag,bx_color = c("#f03b20","#207686"), width = 20,height = 7,xlab = "Age",dtype = "HE",organism = "human",nrow = 2)
 
 
 age_clust<-Processed_HE %>%
@@ -1987,9 +1987,9 @@ age_clust<-Processed_HE %>%
   ggstyle()+
   theme(axis.text.x = element_text(size = 40), axis.text.y = element_text(size = 40), axis.title.x =element_text(size = 40),axis.title.y = element_text(size = 40),legend.text = element_text(size=40),legend.title = element_text(size=40)) 
 
-ggsave(age_clust,filename = paste0("/restricted/projectnb/montilab-p/projects/pneumonia/results/Manuscript/20251027/figures/Supplemental_figures/age_per_cluster.pdf"), width = 30, height = 12)
+ggsave(age_clust,filename = paste0("../figures/Supplemental_figures/age_per_cluster.pdf"), width = 30, height = 12)
 
-ggsave(age_clust,filename = paste0("/restricted/projectnb/montilab-p/projects/pneumonia/results/Manuscript/20251027/figures/Supplemental_figures/age_per_cluster.tiff"), width = 30, height = 12)
+ggsave(age_clust,filename = paste0("../figures/Supplemental_figures/age_per_cluster.tiff"), width = 30, height = 12)
 
 ```
 
@@ -2019,7 +2019,7 @@ fishers_result_ag %>%
   adjust_pvalue(method = "bonferroni") %>%
   add_significance() -> fishers_result_ag
 
-write.csv(fishers_result_ag,"/restricted/projectnb/montilab-p/projects/pneumonia/results/Manuscript/20251027/figures/Supplemental_data/fishers_test_comparing_Age_across_all_clusters.csv")
+write.csv(fishers_result_ag,"../figures/Supplemental_data/fishers_test_comparing_Age_across_all_clusters.csv")
 
 ```
 
@@ -2097,7 +2097,7 @@ Processed_HE %>%
   dplyr::select(-Age,-expired_age,-Race,-smoking_history,-Alcohol_history,-Alcohol_status, -smoking_status,-old_id,-Primary.diagnosis,-X,-clust_labs,-sample_type, -new_labs,-Bacteria_present) -> sx1
 
 # stats
-dunn_for_figure_sx1<-get_stats(sx1,"Gender",folder_name = "/restricted/projectnb/montilab-p/projects/pneumonia/results/Manuscript/20251027/figures/Supplemental_figures/statistical_test_results/",type = "categorical")
+dunn_for_figure_sx1<-get_stats(sx1,"Gender",folder_name = "../figures/Supplemental_figures/statistical_test_results/",type = "categorical")
 
 # Create outliers
 sx1 %>%
@@ -2112,7 +2112,7 @@ sx1 %>%
    transform(Gender = as.factor(Gender))-> data_for_plot_sx1
 
 make_boxplots_dotplots(data_for_plot_sx1,plot_type = "bv",varb_name = "Gender", 
-                       folder_name = "/restricted/projectnb/montilab-p/projects/pneumonia/results/Manuscript/20251027/figures/Supplemental_figures/",stats = dunn_for_figure_sx1,bx_color = c("#f03b20","#207686"), width = 20,height = 7,xlab = "sex",dtype = "HE",organism = "human",nrow = 2)
+                       folder_name = "../figures/Supplemental_figures/",stats = dunn_for_figure_sx1,bx_color = c("#f03b20","#207686"), width = 20,height = 7,xlab = "sex",dtype = "HE",organism = "human",nrow = 2)
 
 
 sx_clust<-Processed_HE %>%
@@ -2128,8 +2128,8 @@ sx_clust<-Processed_HE %>%
   ggstyle() +
   theme(axis.text.x = element_text(size = 40), axis.text.y = element_text(size = 40), axis.title.x =element_text(size = 40),axis.title.y = element_text(size = 40),legend.text = element_text(size=40),legend.title = element_text(size=40)) 
 
-ggsave(sx_clust,filename = paste0("/restricted/projectnb/montilab-p/projects/pneumonia/results/Manuscript/20251027/figures/Supplemental_figures/Sex_per_cluster.pdf"), width = 30, height = 12)
-ggsave(sx_clust,filename = paste0("/restricted/projectnb/montilab-p/projects/pneumonia/results/Manuscript/20251027/figures/Supplemental_figures/Sex_per_cluster.tiff"), width = 30, height = 12)
+ggsave(sx_clust,filename = paste0("../figures/Supplemental_figures/Sex_per_cluster.pdf"), width = 30, height = 12)
+ggsave(sx_clust,filename = paste0("../figures/Supplemental_figures/Sex_per_cluster.tiff"), width = 30, height = 12)
 
 ```
 
@@ -2157,7 +2157,7 @@ fishers_result_sx %>%
   add_significance() -> fishers_result_sx
 
 
-write.csv(fishers_result_sx,"/restricted/projectnb/montilab-p/projects/pneumonia/results/Manuscript/20251027/figures/Supplemental_data/fishers_test_comparing_Sex_across_all_clusters.csv")
+write.csv(fishers_result_sx,"../figures/Supplemental_data/fishers_test_comparing_Sex_across_all_clusters.csv")
 
 ```
 
@@ -2180,7 +2180,7 @@ dplyr::select(-Age,-expired_age,-Race,-smoking_history,-Alcohol_history,-Alcohol
 
 # stats
 meta_stats<-get_stats(mt,"new_labs",
-                      folder_name = "/restricted/projectnb/montilab-p/projects/pneumonia/results/Manuscript/20251027/figures/Supplemental_figures/statistical_test_results/Fibrosis",
+                      folder_name = "../figures/Supplemental_figures/statistical_test_results/Fibrosis",
                       type = "categorical")
 
 
@@ -2199,7 +2199,7 @@ pd1<-metadata_clean_health %>%
   theme(axis.text.x = element_text(angle =90, hjust = 1)) +
   ggstyle()
 
-ggsave(pd1, filename = "/restricted/projectnb/montilab-p/projects/pneumonia/results/Manuscript/20251027/figures/Supplemental_figures/FibrosisHE.pdf", width = 25, height =15, scale=0.8 )
+ggsave(pd1, filename = "../figures/Supplemental_figures/FibrosisHE.pdf", width = 25, height =15, scale=0.8 )
 
 ```
 
@@ -2238,13 +2238,13 @@ for (i in 3:9){
     colorspace::scale_color_continuous_sequential(palette="Hawaii", begin=0.4, end=1) + 
     ggstyle()
     plots[[name_for_plot]]<-p
-    ggsave(p,filename = paste0("/restricted/projectnb/montilab-p/projects/pneumonia/results/Manuscript/20240729/figures/Mouse/Mouse_cluster_meterics","_",i,".png"))
+    ggsave(p,filename = paste0("../figures/Mouse/Mouse_cluster_meterics","_",i,".png"))
 plot(df_clus2$k,df_clus2[[i]], ylab = name_for_plot)
 }
 
 pp<-gridExtra::grid.arrange(grobs = plots, nrow = 2)
 
-ggsave(pp,filename = paste0("/restricted/projectnb/montilab-p/projects/pneumonia/results/Manuscript/20251027/figures/Mouse/Mouse_cluster_metrics_all.pdf"), width = 30, height = 12)
+ggsave(pp,filename = paste0("../figures/Mouse/Mouse_cluster_metrics_all.pdf"), width = 30, height = 12)
 ```
 #mclust
 
@@ -2258,12 +2258,12 @@ set.seed(450093)
 mcresults<-Mclust(mouse_HE_scaled, G = 1:15)
 plot(mcresults, what = "BIC")
 BIC_data<-mcresults$BIC
-pdf("/restricted/projectnb/montilab-p/projects/pneumonia/results/Manuscript/20251027/figures/Mouse/mclust.pdf")
+pdf("../figures/Mouse/mclust.pdf")
 plot(BIC_data)
 dev.off()
-write.csv(BIC_data,"/restricted/projectnb/montilab-p/projects/pneumonia/results/Manuscript/20251027/figures/Mouse/mclust.csv")
+write.csv(BIC_data,"../figures/Mouse/mclust.csv")
 summary(mcresults)
-#ggsave(p,filename = "/restricted/projectnb/montilab-p/projects/pneumonia/results/Manuscript/20251027/figures/Clustering/Mouse/cluster_metrics_mclust.png")
+#ggsave(p,filename = "../figures/Clustering/Mouse/cluster_metrics_mclust.png")
 ```
 
 
@@ -2271,7 +2271,7 @@ summary(mcresults)
 
 
 ```{r}
-Mouse_sex_data<-read_excel("/restricted/projectnb/montilab-p/projects/pneumonia/results/Manuscript/20251027/data/Mouse score sheet with MF column.xlsx")
+Mouse_sex_data<-read_excel("../data/Mouse score sheet with MF column.xlsx")
 ```
 
 
@@ -2297,7 +2297,7 @@ Msx<-clean_column_names(Msx, org = "Mouse")
 
 
 # Run dunn & KW 
-dunn_for_figure_Msx<-get_stats(Msx,"Sex",folder_name = "/restricted/projectnb/montilab-p/projects/pneumonia/results/Manuscript/20251027/figures/Supplemental_data/",type = "categorical") %>% rstatix::add_y_position(step.increase = 0.1) 
+dunn_for_figure_Msx<-get_stats(Msx,"Sex",folder_name = "../figures/Supplemental_data/",type = "categorical") %>% rstatix::add_y_position(step.increase = 0.1) 
 
 
 # Create data points outliers. We don't show other dots, only outliers
@@ -2315,7 +2315,7 @@ Msx %>%
 
 make_boxplots_dotplots(data_for_plot_Msx,plot_type = "bv",
                        varb_name = "Sex", stats = dunn_for_figure_Msx,organism = "Mouse",
-                       folder_name = "/restricted/projectnb/montilab-p/projects/pneumonia/results/Manuscript/20251027/figures/Supplemental_figures/",
+                       folder_name = "../figures/Supplemental_figures/",
                        bx_color = c("#5ab4ac","#b35806"), width = 16,height = 8,xlab = "Mouse sex", dtype = "HE",nrow = 2)
 ```
 
@@ -2347,7 +2347,7 @@ fishers_result_Msx %>%
   adjust_pvalue() %>%
   add_significance() -> fishers_result_Msx
 
-write.csv(fishers_result_Msx,"/restricted/projectnb/montilab-p/projects/pneumonia/results/Manuscript/20251027/figures/Supplemental_data/fishers_test_comparing_Mouse_Sex_across_all_clusters.csv")
+write.csv(fishers_result_Msx,"../figures/Supplemental_data/fishers_test_comparing_Mouse_Sex_across_all_clusters.csv")
 
 ```
 
@@ -2365,14 +2365,14 @@ Mouse_sx_clust %>%
   ggstyle() +
   theme(axis.text.x = element_text(size = 40), axis.text.y = element_text(size = 40), axis.title.x =element_text(size = 40),axis.title.y = element_text(size = 40),legend.text = element_text(size=40),legend.title = element_text(size=40)) -> Mouse_sc_clust_bar
 
-ggsave(Mouse_sc_clust_bar,filename = paste0("/restricted/projectnb/montilab-p/projects/pneumonia/results/Manuscript/20251027/figures/Supplemental_figures/Mouse_Sex_per_cluster.pdf"), width = 30, height = 12)
-ggsave(Mouse_sc_clust_bar,filename = paste0("/restricted/projectnb/montilab-p/projects/pneumonia/results/Manuscript/20251027/figures/Supplemental_figures/Mouse_Sex_per_cluster.tiff"), width = 30, height = 12)
+ggsave(Mouse_sc_clust_bar,filename = paste0("../figures/Supplemental_figures/Mouse_Sex_per_cluster.pdf"), width = 30, height = 12)
+ggsave(Mouse_sc_clust_bar,filename = paste0("../figures/Supplemental_figures/Mouse_Sex_per_cluster.tiff"), width = 30, height = 12)
 ```
 
 
 ```{r}
 sessionInfo() 
-writeLines(capture.output(sessionInfo()), "/restricted/projectnb/montilab-p/projects/pneumonia/results/Manuscript/20251027/figures/Supplemental_data/sessionInfo.txt")
+writeLines(capture.output(sessionInfo()), "../figures/Supplemental_data/sessionInfo.txt")
 ```
 
 
